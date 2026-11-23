@@ -1,0 +1,55 @@
+[project]
+name = "watchpoint"
+version = "0.1.0"
+description = "Fetch copies of watched files, turn them into text, and report what changed since the last check"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "httpx>=0.27",
+    "keyring>=25",
+    "lxml>=5",
+    "openpyxl>=3.1",
+    "pydantic>=2.6",
+    "python-docx>=1.1",
+    "pywebview>=5 ; sys_platform == 'win32'",
+    "pywin32>=306; sys_platform == 'win32'",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "truststore>=0.9",
+    "typer>=0.12",
+]
+
+[project.scripts]
+watchpoint = "watchpoint.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watchpoint", "src/officetext"]
+exclude = ["src/officetext/tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src/officetext/tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "PIE", "RET", "I"]
+ignore = [
+    "E501",    # long lines are kept for messages shown to the user
+    "B008",    # typer declares options as call defaults by design
+    "B904",    # typer.Exit inside except is the intended way to end a command
+    "SIM105",  # explicit try/except reads better for the cleanup paths
+    "SIM108",
+    "RET504",
+]
