@@ -146,6 +146,8 @@ uv tool install C:\path\to\watchpoint
 
 Copilot CLI や Claude Code などの AI エージェントに「watchpoint の見張りを全部チェックして要約して」と頼めるように、スキル（エージェント向けの手順書 `SKILL.md`）を入れる。
 
+スキルを入れたエージェントは、本人に頼まれたときだけ見張りを足す・直す。そのときは、設定ファイルを `.bak` に写してから頼まれた見張りの部分だけを書き換え、`watchpoint doctor` で誤りと助言を確かめ、`watchpoint preview` で結果を見せる。表の列は `cells` ではなく `key` / `columns` / `show` で行ごとに見ること、Office 経由で取れないときは手元のファイルを見張ることも、手順書に書いてある。
+
 ```powershell
 uv tool install C:\path\to\watchpoint   # どこからでも watchpoint を動かせるようにする（エージェントはこれを呼ぶ）
 watchpoint skill install                 # ~/.agents/skills（Copilot CLI ほか）と ~/.claude/skills（Claude Code）に入れる
@@ -394,6 +396,24 @@ targets:
     source: https://contoso.sharepoint.com/sites/team/Shared%20Documents/質問表.xlsx
     fetch: office             # Excel に読み取り専用で開かせる（1回ごとに Excel が起動するので every: 30m などに）
     key: No.
+```
+
+### Office 経由で取れないとき（SharePoint）
+
+`fetch: office` は、見えない Excel にファイルを開かせる。Excel がサインインできていても、組織の設定によっては開けないことがある（「サインインかアクセス権を確かめて」「時間切れ」で取得失敗になる）。そのときは、ファイルを決まった手元の場所に置き、その手元のファイルを見張る。
+
+- **手元に置く方法は問わない**: OneDrive の「ショートカットを追加」で同期する、手でダウンロードする、ダウンロードする道具で定期的に取る、など。watchpoint はそのファイルを、共有フォルダのファイルと同じように読む（元のファイルは開かず、コピーを取ってから読む）
+- **置き換えは丸ごとに**: 書きかけのファイルを読んだときは、少し待って読み直す。ダウンロードする道具を作るなら、隣に書いてから入れ替える形が確実
+- **取ってからチェック**: 取る処理のあとに `watchpoint check` を続けて動かせば、1 回で済む（バッチファイルなどで）
+- **表の列は行ごとに**: 手元のファイルにしても、表の列を見るなら `key` / `columns` / `show`（上の「見張り方を選ぶ」）
+
+```yaml
+  - name: 質問一覧
+    source: 'D:\watch\質問表.xlsx'   # 手元に置いたファイル（SharePoint の URL ではなく）
+    sheets: [質問一覧]
+    key: No.
+    columns: [質問, ステータス]
+    show: [回答者, 期限]
 ```
 
 チケットの一覧（Redmine の `issues.json` など）のこつ:

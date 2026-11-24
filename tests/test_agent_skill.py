@@ -72,3 +72,10 @@ def test_default_places_are_the_personal_skill_folders(monkeypatch, tmp_path: Pa
         tmp_path / ".agents" / "skills" / "watchpoint" / "SKILL.md",
         tmp_path / ".claude" / "skills" / "watchpoint" / "SKILL.md",
     ]
+
+
+def test_the_skill_says_how_to_add_a_target_well() -> None:
+    """An agent asked to add a table once watched its columns by cells and split them over two targets."""
+    text = agent_skill.text()
+    for said in ("watchpoint doctor", ".bak", "key", "columns", "show", "分けて避けない", "手元のファイル"):
+        assert said in text, said

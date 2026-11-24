@@ -166,7 +166,11 @@ _SIGN_IN = (
     "{app} を開き、［ファイル］→［アカウント］で、この SharePoint の組織のアカウントにサインインしているかを"
     "確かめてください（いつもの {app} でこのファイルを一度開くと、サインインを求められることがあります）"
 )
-_INSTEAD = "それでも取れなければ、OneDrive の「ショートカットを追加」で同期し、手元に出てきたファイルを見張ってください"
+_INSTEAD = (
+    "それでも取れなければ、手元のファイルを見張ってください。OneDrive の「ショートカットを追加」で同期したファイルや、"
+    "ほかの方法（手でダウンロードする、ダウンロードする道具で定期的に取るなど）で決まった場所に保存したファイルを "
+    "source にします（README の「Office 経由で取れないとき」）"
+)
 
 # What Excel and Word say (in Japanese or English) when they cannot open a file, and what it points to.
 _CAUSES = (
