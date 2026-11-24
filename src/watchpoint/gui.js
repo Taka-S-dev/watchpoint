@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   overview: null, selected: decodeURIComponent(location.hash.slice(1)) || null, detail: null,
   tags: new Set(), job: null, polling: false, known: null, tab: "targets", autoRun: false,
+  starting: null, jobStart: 0,  // the names asked for, until the answer to /api/check arrives; when it was pressed
   picked: new Set(), lastPick: null, order: [],
   config: { hash: null, saved: "", targets: [] },
 };
@@ -103,7 +104,8 @@ const short = (stamp) => (stamp ? stamp.slice(5, 16).replace("-", "/").replace("
 const todayMD = () => { const d = new Date(); return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`; };
 const brief = (s) => (s && s.startsWith(`${todayMD()} `) ? s.slice(6) : s);
 const needsLook = (t) => t.pending || t.status === "取得失敗" || (t.alerts && t.alerts.length > 0);
-const jobActive = () => !!(state.job && state.job.active);
+const jobActive = () => !!(state.starting || (state.job && state.job.active));
+const runningNow = () => (state.job && state.job.active ? state.job.running : []);  // none while starting
 
 // ------------------------------------------------------------------ overview and notifications
 
@@ -215,7 +217,7 @@ function shownTargets() {
 function renderList() {
   if (!state.overview) return;
   const shown = shownTargets();
-  const running = new Set(jobActive() ? state.job.running : []);
+  const running = new Set(runningNow());
   const list = $("list");
   if (!shown.length) {
     list.replaceChildren(el("li", { class: "empty", text: state.overview.targets.length ? "当てはまる見張りがありません" : "まだ見張りがありません" }));
@@ -370,9 +372,18 @@ function renderCheckButtons(shown) {
 
 async function runCheck(names, due = false, via = "page") {
   if (jobActive()) { toast("いまチェック中です"); return; }
+  // Answer the click at once: the buttons and the panel change before the request goes out.
+  state.starting = names || (state.overview ? state.overview.targets.map((t) => t.name) : []);
+  state.jobStart = Date.now();
+  renderProgress();
   try {
     state.job = await api("/api/check", { names, due, via });
-  } catch (e) { state.autoRun = false; toast(e.message, true); return; }
+  } catch (e) {
+    state.starting = null;
+    renderProgress();
+    state.autoRun = false; toast(e.message, true); return;
+  }
+  state.starting = null;
   renderProgress();
   renderList();
   pollJob();
@@ -381,9 +392,13 @@ async function runCheck(names, due = false, via = "page") {
 async function pollJob() {
   if (state.polling) return;
   state.polling = true;
+  if (!state.jobStart) state.jobStart = Date.now();  // a run already going when the page opened
+  const ticker = setInterval(renderProgress, 1000);  // the seconds keep moving while nothing else does
+  let wait = 150;  // a quick check ends before the first look; a slow one is looked at less often
   try {
     while (true) {
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, wait));
+      wait = Math.min(wait * 2, 600);
       let r;
       try { r = await api("/api/job"); } catch (e) { toast(e.message, true); break; }
       state.job = r.job;
@@ -392,7 +407,9 @@ async function pollJob() {
       if (!jobActive()) break;
     }
   } finally {
+    clearInterval(ticker);
     state.polling = false;
+    state.jobStart = 0;
   }
   await finishJob();
 }
@@ -421,14 +438,44 @@ async function finishJob() {
 
 function renderProgress() {
   const p = $("progress");
-  const j = state.job;
+  const j = state.starting ? null : state.job;
   const active = jobActive();
   for (const b of document.querySelectorAll("button.check, button[data-check]")) b.disabled = active;
   p.classList.toggle("on", active);
+  renderCheckState();
   if (!active) { p.textContent = ""; p.title = ""; return; }
+  const secs = elapsed();
+  if (!j) { p.textContent = "チェックを始めています…"; p.title = ""; return; }
   const now = j.running.length ? `: ${j.running.join("、")}` : "";
-  p.textContent = `チェック中 ${j.results.length}/${j.total}${now}`;
+  p.textContent = `チェック中 ${j.results.length}/${j.total}${secs}${now}`;
   p.title = p.textContent;
+}
+
+const elapsed = () => {
+  const s = state.jobStart ? Math.floor((Date.now() - state.jobStart) / 1000) : 0;
+  return s >= 1 ? `（${s} 秒）` : "";
+};
+
+// Where the person pressed: the open target says whether it is waiting, being fetched, and for how long.
+function renderCheckState() {
+  const box = document.getElementById("check-state");
+  const d = state.detail;
+  if (!box || !d) return;
+  const j = state.starting ? null : state.job;
+  const names = state.starting || (jobActive() && j ? j.names || [] : []);
+  const mine = jobActive() && names.includes(d.name) && !(j && j.results.some((r) => r.name === d.name));
+  const btn = document.querySelector("button[data-check]");
+  if (btn) btn.textContent = mine ? "チェック中…" : "今すぐチェック";
+  box.hidden = !mine;
+  if (!mine) return;
+  const running = j && j.running.includes(d.name);
+  const office = /Office|SharePoint|Excel・セル/.test(d.kind || "") && /^https?:/.test(d.source || "");
+  const slow = Date.now() - state.jobStart > 3000;
+  // waiting only while others are being fetched; before anything runs, the check is just starting
+  const waiting = j && !running && j.running.length > 0;
+  box.textContent = running ? `取ってきています${elapsed()}` + (office && slow ? "。見えない Excel でファイルを開いています（SharePoint は十数秒かかることがあります）" : "")
+    : waiting ? `順番を待っています${elapsed()}（ほかの見張りをチェックしています）`
+    : `チェックを始めています…${elapsed()}`;
 }
 
 function setupAuto() {
@@ -755,7 +802,7 @@ async function select(name, keepScroll = false) {
 function renderAdded(d) {
   const sched = state.overview && state.overview.schedule;
   const unattended = sched && sched.state === "ok";
-  const checking = jobActive() && state.job.running.includes(d.name);
+  const checking = runningNow().includes(d.name);
   return el("div", { class: "just-added" },
     el("p", { text: checking ? "見張りを始めました。いまの内容を取ってきています…" : d.status === "取得失敗"
       ? "設定は保存しましたが、取ってこられませんでした。上のエラーを見て、場所やアクセス権を確かめてください。"
@@ -981,6 +1028,7 @@ function renderDetail(d) {
   const head = el("div", { class: "detail-head" },
     el("div", { class: "title-row" },
       el("h2", { text: d.name }), el("span", { class: `badge ${badgeClass(d.status)}`, text: d.status })),
+    el("div", { id: "check-state", class: "check-state", role: "status", hidden: true }),
     el("div", { class: "actions" },
       el("button", { "data-check": "1", onclick: () => runCheck([d.name]), text: "今すぐチェック" }),
       d.pending ? note : null,

@@ -115,6 +115,7 @@ class CheckJob:
     due: bool
     via: str = "page"
     started: str = field(default_factory=_now)
+    names: list[str] = field(default_factory=list)  # every target of this run, in order
     running: list[str] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
     finished: str | None = None
@@ -306,7 +307,7 @@ class App:
             if self.job and self.job.finished is None:
                 raise ApiError(HTTPStatus.CONFLICT, "いまチェック中です。終わってからもう一度押してください")
             self._job_ids += 1
-            job = self.job = CheckJob(self._job_ids, len(targets), due, via)
+            job = self.job = CheckJob(self._job_ids, len(targets), due, via, names=[t.name for t in targets])
         threading.Thread(target=self._run_check, args=(job, targets, cfg, data_dir), daemon=True).start()
         return job.view()
 

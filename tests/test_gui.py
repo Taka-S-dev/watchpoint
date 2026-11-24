@@ -108,3 +108,9 @@ def test_gui_command_prints_a_url_that_opens_the_page(tmp_path, monkeypatch) -> 
     monkeypatch.setattr(gui_mod.ThreadingHTTPServer, "serve_forever", lambda self: None)
     out = CliRunner().invoke(app, ["gui", "-c", str(cfg), "--no-browser"]).output
     assert re.search(r"http://127\.0\.0\.1:\d+/\?k=[\w-]{20,}", out)
+
+
+def test_a_check_names_its_targets_so_the_page_can_say_which_wait(gui) -> None:
+    call, _src, _app = gui
+    job = call.check({"names": ["仕様"]})
+    assert job["names"] == ["仕様"] and job["total"] == 1
