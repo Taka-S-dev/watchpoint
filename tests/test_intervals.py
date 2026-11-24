@@ -170,3 +170,33 @@ def test_page_sets_every_and_keeps_the_rest(gui) -> None:
     assert status == 200 and app.config_path.read_text(encoding="utf-8") == before
     status, r = call("/api/targets/every", {"name": "仕様", "every": "1m"})
     assert status == 422 and "5m 以上" in r["error"]
+
+
+def test_whether_a_path_is_a_folder_is_asked_of_the_disk_once_a_minute(tmp_path: Path, monkeypatch) -> None:
+    """kind is read many times, and the page reloads the config often: a slow share must not be asked each time."""
+    import watchpoint.config as config
+    from watchpoint.config import Target
+
+    asked = []
+    real = Path.is_dir
+    monkeypatch.setattr(Path, "is_dir", lambda self: asked.append(self) or real(self))
+    source = str(tmp_path / "share")
+    for _ in range(3):
+        t = Target(name="a", source=source)
+        assert t.kind == "file" and not t.is_folder
+    assert len(asked) == 1
+    monkeypatch.setattr(config, "_FOLDER_TTL", 0.0)  # once the minute is over, it is asked again
+    (tmp_path / "share").mkdir()
+    assert Target(name="a", source=source).kind == "folder"
+
+
+def test_a_name_ending_like_a_file_never_asks_the_disk(monkeypatch) -> None:
+    """On a share the ask is a network round trip; a name like 質問表.xlsx is a file whatever the share says."""
+    from watchpoint.config import Target
+
+    def no_disk(self):
+        raise AssertionError(f"asked the disk about {self}")
+
+    monkeypatch.setattr(Path, "is_dir", no_disk)
+    assert Target(name="a", source=r"\server\share\資料\質問表.xlsx").kind == "file"
+    assert Target(name="a", source=r"\server\share\資料\*.docx").kind == "folder"

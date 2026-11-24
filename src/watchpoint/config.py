@@ -6,6 +6,7 @@ import datetime as dt
 import glob as globmod
 import os
 import re
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Literal
@@ -31,6 +32,11 @@ PLAN_SUFFIXES = (".mpp", ".mpt")  # Microsoft Project plans
 # A web address ending in one of these is a file to download and read as that file (a Confluence
 # attachment, a file on an intranet site); anything else on the web is a page.
 DOWNLOAD_SUFFIXES = {".xlsx", ".xlsm", ".docx", ".csv", ".tsv", ".txt", ".md", ".pdf", ".mpp", ".mpt"}
+# Names that end like this are files: a folder is never named so (kind needs no disk for them).
+FILE_SUFFIXES = DOWNLOAD_SUFFIXES | {
+    ".xls", ".doc", ".ppt", ".pptx", ".vsdx", ".log", ".json", ".yaml", ".yml", ".xml", ".html", ".htm", ".ini",
+    ".zip", ".png", ".jpg", ".jpeg", ".gif",
+}  # fmt: skip
 
 
 def url_suffix(url: str) -> str:
@@ -95,13 +101,27 @@ class Rule(Strict):
         return self
 
 
+_FOLDER_TTL = 60.0  # seconds a path's answer is kept
+_folders: dict[str, tuple[float, bool]] = {}
+
+
 def _is_folder(source: str) -> bool:
     """Whether a path names a folder, without letting a place that cannot be reached stop the config from
-    loading: a share that refuses access is taken for a file here, and its check fails with the reason."""
+    loading: a share that refuses access is taken for a file here, and its check fails with the reason.
+
+    The answer is kept for a minute: kind is read many times per target, and the page reloads the config
+    every few seconds; on a share each ask is a round trip, seconds long when the share does not answer.
+    """
+    now = time.monotonic()
+    hit = _folders.get(source)
+    if hit is not None and now - hit[0] < _FOLDER_TTL:
+        return hit[1]
     try:
-        return Path(source).is_dir()
+        answer = Path(source).is_dir()
     except (OSError, ValueError):
-        return False
+        answer = False
+    _folders[source] = (now, answer)
+    return answer
 
 
 class Target(Strict):
@@ -346,9 +366,13 @@ class Target(Strict):
             if low.endswith(".json") or self.records:
                 return "json"
             return "web"
-        if "*" in s or "?" in s or s.endswith(("/", "\\")) or _is_folder(s):
+        if "*" in s or "?" in s or s.endswith(("/", "\\")):
             return "folder"
-        return "file"
+        # A name ending like a file is taken for one without asking the disk: on a share the ask is a
+        # network round trip, seconds long for a server that does not answer, paid on every start.
+        if Path(s).suffix.lower() in FILE_SUFFIXES:
+            return "file"
+        return "folder" if _is_folder(s) else "file"
 
     @property
     def is_folder(self) -> bool:
