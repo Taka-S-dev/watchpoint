@@ -83,3 +83,11 @@ def test_the_form_writes_show_right_after_columns() -> None:
     item = clean_item({"show": ["期限"], "name": "a", "columns": ["質問"], "source": "q.csv", "key": "No."})
     assert list(item) == ["name", "source", "key", "columns", "show"]
 
+
+def test_too_many_cells_says_to_watch_rows_and_not_to_split() -> None:
+    """Two long columns: an AI editing the config once split such cells over two targets to get past this."""
+    with pytest.raises(ValidationError) as e:
+        Target(name="a", source="q.xlsx", cells=["一覧!C1:C1500", "一覧!E1:E1500"])
+    said = str(e.value)
+    assert "3000 個" in said and "分けないでください" in said
+    assert "key: No." in said and "columns:" in said and "show:" in said

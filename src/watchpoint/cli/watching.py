@@ -10,6 +10,7 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
+from ..advice import config_advice
 from ..check import Result, Stale, Status, acknowledge, check_all, send_notifications
 from ..config import TEMPLATE, resolve_config_path
 from ..report import as_markdown, kind_label
@@ -109,14 +110,17 @@ def check(
                 acknowledge(r.target, cfg, data_dir)
 
     shown = [r for r in results if r.needs_attention] if changed_only else results
+    advice = config_advice(cfg)
     if fmt is Format.md:
-        print(as_markdown(shown, total=len(results)))
+        print(as_markdown(shown, total=len(results), advice=advice))
     elif fmt is Format.json:
         print(json.dumps([r.to_dict() for r in shown], ensure_ascii=False, indent=2))
     else:
         if shown:
             _print_table(shown)
         _print_summary(results)
+        for a in advice:
+            console.print(f"[yellow]設定の助言[/yellow] {escape(a)}")
         for r in shown:
             if r.status is Status.CHANGED and r.diff:
                 _print_detail(r)

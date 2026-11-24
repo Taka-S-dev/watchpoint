@@ -25,6 +25,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from . import commands, editing
+from .advice import config_advice
 from .check import Stale, Status, acknowledge, build_text, check_target, has_pending
 from .commands import is_allowed
 from .config import Config, ConfigError, Rule, Target, load_config
@@ -419,7 +420,7 @@ class App:
             cfg = load_config(self.config_path, text)
         except ConfigError as e:
             return {"ok": False, "error": str(e), "targets": []}
-        return {"ok": True, "error": None, "targets": [t.name for t in cfg.targets]}
+        return {"ok": True, "error": None, "targets": [t.name for t in cfg.targets], "advice": config_advice(cfg)}
 
     def peek(self, source: str) -> dict:
         """The sheets and first rows of a source, for clicking a header, a key or cells on the form."""
@@ -627,4 +628,8 @@ class App:
             replace_file(tmp, self.config_path)
         finally:
             tmp.unlink(missing_ok=True)
-        return {"hash": _digest(data), "targets": targets}
+        try:
+            advice = config_advice(load_config(self.config_path))
+        except ConfigError:
+            advice = []
+        return {"hash": _digest(data), "targets": targets, "advice": advice}

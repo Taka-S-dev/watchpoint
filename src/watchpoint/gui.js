@@ -1369,12 +1369,18 @@ async function loadConfig(force = false) {
   } catch (e) { $("config-result").replaceChildren(el("div", { class: "error", text: e.message })); }
 }
 
+// Settings that work but fit their use badly (a column of a table watched by its cells): said, not refused.
+const adviceBox = (advice) => (advice && advice.length
+  ? el("div", { class: "notice advice" }, el("b", { text: "書き方の助言" }), advice.map((a) => el("p", { text: a })))
+  : null);
+
 async function validateConfig(quiet = false) {
   const r = await api("/api/config/validate", { text: $("config-text").value });
   if (r.ok) renderConfigTargets(r.targets);  // while the text has an error, keep the last good list to try with
+  const tip = r.ok ? adviceBox(r.advice) : null;
   if (!r.ok) $("config-result").replaceChildren(el("div", { class: "error", text: r.error }));
-  else if (!quiet) $("config-result").replaceChildren(el("div", { class: "okbox", text: `誤りはありません（見張り ${r.targets.length} 件）` }));
-  else $("config-result").replaceChildren();
+  else if (!quiet) $("config-result").replaceChildren(...[el("div", { class: "okbox", text: `誤りはありません（見張り ${r.targets.length} 件）` }), tip].filter(Boolean));
+  else $("config-result").replaceChildren(...[tip].filter(Boolean));
   return r.ok;
 }
 
@@ -1385,7 +1391,7 @@ async function saveConfig() {
     state.config.saved = $("config-text").value;
     renderConfigState();
     renderConfigTargets(r.targets);
-    $("config-result").replaceChildren(el("div", { class: "okbox", text: `保存しました（見張り ${r.targets.length} 件。前の内容は .bak に）` }));
+    $("config-result").replaceChildren(...[el("div", { class: "okbox", text: `保存しました（見張り ${r.targets.length} 件。前の内容は .bak に）` }), adviceBox(r.advice)].filter(Boolean));
     await loadOverview();
   } catch (e) { $("config-result").replaceChildren(el("div", { class: "error", text: e.message })); }
 }
@@ -2252,6 +2258,8 @@ function openAddTarget() {
       state.config.hash = null;  // the editor reloads the saved file next time
       closeDialog(true);
       state.justAdded = r.name;
+      const mine = (r.advice || []).filter((a) => a.startsWith(`「${r.name}」`));
+      if (mine.length) toast(mine.join("\n"));
       await showTab("targets");
       await loadOverview();
       await select(r.name);

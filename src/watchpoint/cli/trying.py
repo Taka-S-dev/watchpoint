@@ -12,6 +12,7 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
+from ..advice import config_advice
 from ..check import build_text
 from ..config import Target
 from ..credentials import has_secret
@@ -53,6 +54,8 @@ def doctor(
     """設定と、各見張りの場所・資格情報・通知先を確かめる（保存しない）。"""
     cfg, path, data_dir = load_targets(config)
     console.print(f"[green]OK[/green] 設定ファイル: {escape(str(path))}（見張り {len(cfg.targets)} 件）")
+    for a in config_advice(cfg):
+        console.print(f"[yellow]助言[/yellow] {escape(a)}")
     problems = 0
     try:
         data_dir.mkdir(parents=True, exist_ok=True)

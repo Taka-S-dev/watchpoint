@@ -160,7 +160,9 @@ def saved_results(targets: list[Target], config: Config, data_dir: Path) -> list
     return out
 
 
-def as_markdown(results: list[Result], total: int | None = None, chat: bool = False, places: bool = True) -> str:
+def as_markdown(
+    results: list[Result], total: int | None = None, chat: bool = False, places: bool = True, advice: list[str] = ()
+) -> str:
     """The results for an AI to read.
 
     For an agent (the default) it carries what the agent needs to act: where the text is kept and
@@ -190,6 +192,9 @@ def as_markdown(results: list[Result], total: int | None = None, chat: bool = Fa
         ),
         "",
     ]
+    if advice and not chat:  # settings that work but fit their use badly: for whoever keeps the config
+        notes = [f"- {a}".replace("\n", "\n  ") for a in advice]  # the example stays inside its item
+        out += ["## 設定の助言（見張りの書き方を直すとよいもの。本人に伝える）", "", *notes, ""]
     for r in results:
         out.append(f"## {r.target.name}")
         out.append(f"- 状態: {r.status.value}")

@@ -54,12 +54,29 @@ def cell_refs(target: Target) -> list[CellRef]:
             sheet = sheet[1:-1].replace("''", "'")
         min_col, min_row, max_col, max_row = range_boundaries(m.group("range").replace("$", "").upper())
         total += (max_col - min_col + 1) * (max_row - min_row + 1)
-        if total > MAX_CELLS:
-            raise CellRefError(
-                f"cells が多すぎます（{MAX_CELLS} 個まで）。表全体を見るなら、cells ではなく key で行ごとに比べてください"
-            )
         out.append(CellRef(sheet, min_col, min_row, max_col, max_row, str(label).strip() or "値"))
+    if total > MAX_CELLS:
+        raise CellRefError(too_many_cells(total))
     return out
+
+
+def too_many_cells(total: int) -> str:
+    """Why a long range of cells is the wrong tool, and what to write instead.
+
+    Read by a person and by an AI editing the config alike: splitting the cells over several targets
+    gets past the limit but keeps the real problem, so the message says not to.
+    """
+    return (
+        f"cells が多すぎます（{total} 個。{MAX_CELLS} 個まで）。"
+        "列を何百行も見るなら、セルではなく行ごとに見てください。cells は番地で比べるので、"
+        "途中に行が挿入されると、その下のセルが全部「変わった」と出ます。"
+        "見張りを分けて上限を避けても、この問題は残ります（分けないでください）。\n"
+        "書き換えの例:\n"
+        "  key: No.                     # 行を見分ける列（番号や ID）\n"
+        "  columns: [質問, ステータス]  # 変わったら知らせる列（見出しの名前で）\n"
+        "  show: [回答者, 期限]         # 変わった行と一緒に見るだけの列（任意）\n"
+        "行を見分ける列が無い表なら、cells のまま見たい範囲を絞ってください"
+    )
 
 
 def _value(cell: Cell, formulas: bool):
