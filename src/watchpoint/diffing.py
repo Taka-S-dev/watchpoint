@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from .textify.base import SECTION_PREFIX
+from .textify.base import _RECORD, SECTION_PREFIX
 from .textify.records import parse_records
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
@@ -83,7 +83,8 @@ class RecordDiff:
     # The same changes as data, for a page to lay out as a table: lines are made for reading and an AI,
     # and a value holding " / " or " → " cannot be split back out of them.
     #   {kind: added|removed, section, key, values: [[field, value], ...]}
-    #   {kind: changed, section, key, cells: [[field, before, after], ...], row: [[field, value now], ...]}
+    #   {kind: changed, section, key, cells: [[field, before, after], ...], row: [[field, value now], ...],
+    #    context: [[field, value now], ...]}  (the show columns: read beside the change, never compared)
     #   {kind: columns, section, added: [...], removed: [...]}
     entries: list[dict] = field(default_factory=list)
 
@@ -103,6 +104,7 @@ def record_diff(before: str, after: str, report: Iterable[str] = ("added", "chan
         by_section[section].append((line, {**entry, "section": section}))
 
     skip_fields: dict[str, set[str]] = {}
+    shown = {s: set(a.show.get(s, [])) | set(b.show.get(s, [])) for s in set(a.show) | set(b.show)}
     for section in dict.fromkeys(list(a.columns) + list(b.columns)):
         old_cols, new_cols = a.columns.get(section), b.columns.get(section)
         if old_cols is None or new_cols is None or old_cols == new_cols:
@@ -130,10 +132,11 @@ def record_diff(before: str, after: str, report: Iterable[str] = ("added", "chan
             continue
         old, new = a.fields[key], b.fields[key]
         skip = skip_fields.get(section, set())
+        only_shown = shown.get(section, set())
         changes = []
         cells = []
         for name in dict.fromkeys(list(old) + list(new)):
-            if name in skip:
+            if name in skip or name in only_shown:
                 continue
             ov, nv = old.get(name, ""), new.get(name, "")
             if ov != nv:
@@ -146,10 +149,13 @@ def record_diff(before: str, after: str, report: Iterable[str] = ("added", "chan
             # (cells under a blank header are not in the column line; they follow it)
             names = list(dict.fromkeys(b.columns.get(section, []) + list(new) + [n for n in old if n not in skip]))
             row = [[name, new.get(name, "")] for name in names]
+            show_order = list(dict.fromkeys(b.show.get(section, []) + a.show.get(section, [])))
+            context = [[name, new.get(name, "")] for name in show_order if new.get(name, "")]
+            beside = f"（{' / '.join(f'{n}: {v}' for n, v in context)}）" if context else ""
             emit(
                 section,
-                f"変更 [{k}] " + " / ".join(changes),
-                {"kind": "changed", "key": k, "cells": cells, "row": row},
+                f"変更 [{k}] " + " / ".join(changes) + beside,
+                {"kind": "changed", "key": k, "cells": cells, "row": row, **({"context": context} if context else {})},
             )
     if "removed" in report:
         for key in a.order:
@@ -167,3 +173,22 @@ def record_diff(before: str, after: str, report: Iterable[str] = ("added", "chan
         result.lines += [line for line, _ in by_section[s]]
         result.entries += [entry for _, entry in by_section[s]]
     return result
+
+
+def without_shown(text: str) -> str:
+    """text with the show columns' values taken out of every row: what is compared."""
+    a = parse_records(text)
+    if not a.show:
+        return text
+    out = []
+    section = ""
+    for line in text.splitlines():
+        if line.startswith(SECTION_PREFIX):
+            section = line[len(SECTION_PREFIX) :]
+        drop = set(a.show.get(section, []))
+        m = _RECORD.match(line)
+        if drop and m and m.group(3):
+            kept = [p for p in m.group(3).split(" | ") if p.partition("=")[0] not in drop]
+            line = f"[{m.group(1)}={m.group(2)}] " + " | ".join(kept)
+        out.append(line.rstrip())
+    return "\n".join(out)

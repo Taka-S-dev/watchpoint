@@ -101,6 +101,9 @@ nav.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font
 .badge.failed { background: var(--failed-bg); color: var(--failed); font-weight: 600; }
 .badge.alert { background: var(--col-bg); color: var(--col); font-weight: 600; }
 .alerts { background: var(--col-bg); color: var(--col); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+.chip.show-only { border-style: dashed; }
+td.show-only { background: var(--dim-bg); font-style: italic; }
+.beside { color: var(--muted); font-size: var(--fs-xs); white-space: normal; margin-top: 2px; }
 .notice { border: 1px solid var(--line); border-left: 4px solid var(--changed); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
 .alerts ul { margin: 4px 0 0; padding-left: 20px; }
 .rules .rule { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }

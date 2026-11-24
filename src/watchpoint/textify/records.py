@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-from .base import _RECORD, COLUMNS_PREFIX, SECTION_PREFIX
+from .base import _RECORD, COLUMNS_PREFIX, SECTION_PREFIX, SHOW_PREFIX
 
 
 @dataclass
@@ -17,6 +17,7 @@ class Records:
     fields: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     raw: dict[tuple[str, str], str] = field(default_factory=dict)
     columns: dict[str, list[str]] = field(default_factory=dict)
+    show: dict[str, list[str]] = field(default_factory=dict)  # columns only to read beside a change
 
 
 def parse_records(text: str) -> Records:
@@ -25,6 +26,10 @@ def parse_records(text: str) -> Records:
     for line in text.splitlines():
         if line.startswith(SECTION_PREFIX):
             section = line[len(SECTION_PREFIX) :]
+            continue
+        if line.startswith(SHOW_PREFIX):
+            body = line[len(SHOW_PREFIX) :]
+            recs.show[section] = body.split(" | ") if body else []
             continue
         if line.startswith(COLUMNS_PREFIX):
             body = line[len(COLUMNS_PREFIX) :]

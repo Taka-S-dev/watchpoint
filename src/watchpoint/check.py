@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import fetchers, notify
 from .config import Config, Target
-from .diffing import annotate_hunks, inline_changes, record_diff
+from .diffing import annotate_hunks, inline_changes, record_diff, without_shown
 from .fetchers.shared import shared_copies
 from .rules import alerts_for
 from .store import State, TargetStore, append_log
@@ -419,6 +419,17 @@ def compare(
     full: dict = {"full_diff": "\n".join(unified) + "\n"}
     since = f"（確認済みの {pretty_id(base_id)} 時点から）"
     version = _version_note(meta)
+
+    if target.show and without_shown(base_text) == without_shown(text):
+        # only a column read beside the rows changed (who answers, by when): nothing to tell
+        return Result(
+            target,
+            Status.FILTERED,
+            f"変わったのは見るだけの列（show）だけ（自動で確認済み）{since}",
+            snapshot=snap,
+            meta=meta,
+            **full,
+        )
 
     if text.startswith(UNSUPPORTED_MARK):
         return Result(

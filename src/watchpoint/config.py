@@ -168,6 +168,9 @@ class Target(Strict):
     header_row: int | Literal["auto"] = 1
     key: str | None = None
     columns: list[str] | None = None
+    # columns read beside a changed row (who answers it, by when) but never compared: a change in one alone
+    # is not reported
+    show: list[str] | None = None
     where: dict[str, str | list[str]] | None = None
     formulas: bool = False
     # Excel: only these cells. ["集計!F20", "B3:D5"], or {合計: 集計!F20} to name what each one is.
@@ -280,6 +283,17 @@ class Target(Strict):
 
     @model_validator(mode="after")
     def _consistent(self) -> Target:
+        if self.show is not None:
+            if not self.key:
+                raise ValueError("show（見るだけの列）は key（行を見分ける列）と一緒に使います")
+            if not [c for c in self.show if c.strip()]:
+                raise ValueError("show が空です。変わった行と一緒に見たい列の見出しを書いてください")
+            both = [c for c in self.show if c in (self.columns or []) or c == self.key]
+            if both:
+                raise ValueError(
+                    f"{', '.join(both)} が show と columns（または key）の両方にあります。"
+                    "変わったら知らせる列なら columns に、一緒に見るだけなら show に書いてください"
+                )
         if self.header_row == "auto" and not (self.key or self.columns):
             raise ValueError("header_row: auto には key か columns が要ります（見出しを探す手がかり）")
         if self.kind in ("web", "json", "confluence", "download") and not self.source.startswith(
@@ -724,6 +738,7 @@ targets:
     header_row: auto     # key の見出しがある行を探す（数字でも可）
     key: No.
     columns: [質問, 回答者, 状態, 回答]
+    # show: [期限]       # 見るだけの列（変わった行と一緒に出すが、この列だけの変化は知らせない）
     where:
       回答者: ${me}
     report: [added, changed]   # 削除は数えない

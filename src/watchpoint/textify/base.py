@@ -19,6 +19,7 @@ CSV_SUFFIXES = {".csv", ".tsv"}
 HTML_SUFFIXES = {".html", ".htm"}
 SECTION_PREFIX = "## "
 COLUMNS_PREFIX = "@列 "
+SHOW_PREFIX = "@見るだけ "  # columns kept beside each row to read with a change, never compared
 AUTO_HEADER_SCAN = 30
 MAX_CELLS = 2000  # cells watched in one target; a whole sheet belongs to the row-by-row comparison
 
@@ -37,7 +38,7 @@ class UnsupportedFormat(Exception):
 def _is_structural(line: str, tables: bool = True) -> bool:
     """Lines watchpoint itself writes. In documents (text, Word, web pages) a "## " line is the
     author's heading, so ignore / include / normalize must apply to it like any other line."""
-    return line.startswith((SECTION_PREFIX, COLUMNS_PREFIX) if tables else COLUMNS_PREFIX)
+    return line.startswith((SECTION_PREFIX, COLUMNS_PREFIX, SHOW_PREFIX) if tables else (COLUMNS_PREFIX, SHOW_PREFIX))
 
 
 def shape(text: str, target: Target, tables: bool = True) -> str:
@@ -125,7 +126,7 @@ def _keep_sections(lines: list[str], names: list[str]) -> list[str]:
                 keep_level = None
             if keep_level is None and any(n in line[level + 1 :] for n in names):
                 keep_level = level
-        if keep_level is not None or line.startswith((SECTION_PREFIX + "シート:", COLUMNS_PREFIX)):
+        if keep_level is not None or line.startswith((SECTION_PREFIX + "シート:", COLUMNS_PREFIX, SHOW_PREFIX)):
             out.append(line)
     return out
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from openpyxl.utils import get_column_letter
 
-from .base import AUTO_HEADER_SCAN, COLUMNS_PREFIX, SECTION_PREFIX, read_text_file
+from .base import AUTO_HEADER_SCAN, COLUMNS_PREFIX, SECTION_PREFIX, SHOW_PREFIX, read_text_file
 
 if TYPE_CHECKING:
     from ..config import Target
@@ -67,7 +67,8 @@ def table_to_lines(rows: list[list], target: Target, where: str) -> list[str]:
             auto.add(h)
         header.append(h)
 
-    wanted = ([target.key] if target.key else []) + (target.columns or []) + list((target.where or {}).keys())
+    show = list(target.show or [])
+    wanted = ([target.key] if target.key else []) + (target.columns or []) + show + list((target.where or {}).keys())
     missing = [c for c in dict.fromkeys(wanted) if c not in header]
     if missing:
         shown = [h for h in header if h not in auto]
@@ -86,7 +87,7 @@ def table_to_lines(rows: list[list], target: Target, where: str) -> list[str]:
             f"{where}の {hr} 行目に見出しが見つかりません: {', '.join(missing)}（ある見出し: {', '.join(shown)}）{hint}"
         )
 
-    cols = list(target.columns or [h for h in header if h not in auto])
+    cols = list(target.columns or [h for h in header if h not in auto and h not in show])
     if target.key and target.key not in cols:
         cols = [target.key] + cols
     # A value typed where the header is blank is still a change to report, not something to skip. Those
@@ -96,6 +97,8 @@ def table_to_lines(rows: list[list], target: Target, where: str) -> list[str]:
     where_any = {k: ([v] if isinstance(v, str) else v) for k, v in (target.where or {}).items()}
 
     out = [COLUMNS_PREFIX + " | ".join(c for c in cols if c != target.key)]
+    if show:  # kept beside each row to read with a change; the comparison leaves them out
+        out.append(SHOW_PREFIX + " | ".join(show))
     seen: dict[str, int] = {}
     key_col = header.index(target.key) if target.key else -1
     taken = {cell_text(r[key_col]) for r in rows[hr:] if 0 <= key_col < len(r)} if target.key else set()
@@ -106,7 +109,7 @@ def table_to_lines(rows: list[list], target: Target, where: str) -> list[str]:
         if any(not any(w in values.get(col, "") for w in ws) for col, ws in where_any.items()):
             continue
         body = " | ".join(
-            f"{c}={values.get(c, '')}" for c in cols + unheaded if c != target.key and values.get(c, "") != ""
+            f"{c}={values.get(c, '')}" for c in cols + unheaded + show if c != target.key and values.get(c, "") != ""
         )
         if target.key:
             k = values.get(target.key, "") or f"R{row_no}"

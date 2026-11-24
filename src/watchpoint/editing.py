@@ -24,7 +24,7 @@ from .timewords import check_every, parse_deadline
 # The order a person reads a target in: what and where, how, then what to tell.
 ORDER = (
     "name", "source", "fetch", "watch", "tags", "every", "link",
-    "attachments", "sheets", "header_row", "key", "columns", "where", "cells", "selector",
+    "attachments", "sheets", "header_row", "key", "columns", "show", "where", "cells", "selector",
     "report", "points", "notify_when", "expect_update", "rules",
 )  # fmt: skip
 

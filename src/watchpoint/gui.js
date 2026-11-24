@@ -698,10 +698,12 @@ function sheetTables(entries, view, withSection) {
     }
     const changedCols = new Set(rows.flatMap((e) => (e.kind === "changed" ? e.cells.map((c) => c[0]) : [])));
     for (const name of changedCols) if (!cols.includes(name)) cols.push(name);
+    // the columns asked to be read beside a change (show) are never folded away
+    const besides = new Set(rows.flatMap((e) => (e.context || []).map((c) => c[0])));
     let visible = cols;
     if (cols.length > SHEET_ALL_COLUMNS) {
       const left = new Set(cols.filter((c) => !changedCols.has(c)).slice(0, SHEET_LEFT_COLUMNS));
-      const narrow = cols.filter((c) => changedCols.has(c) || left.has(c));
+      const narrow = cols.filter((c) => changedCols.has(c) || left.has(c) || besides.has(c));
       hidden = Math.max(hidden, cols.length - narrow.length);
       if (!view.allColumns) visible = narrow;
     }
@@ -754,7 +756,9 @@ function recordRow(e, span, field, before, after, withSection) {
     const rs = span > 1 ? String(span) : null;
     if (withSection) tr.append(el("td", { class: "sub", rowspan: rs, text: e.section }));
     tr.append(el("td", { class: "nowrap", rowspan: rs }, el("span", { class: `badge ${e.kind}`, text: { added: "追加", changed: "変更", removed: "削除", columns: "列" }[e.kind] }),
-      " ", e.key || ""));
+      " ", e.key || "",
+      // the show columns: read beside the change (who answers it, by when), not compared
+      e.context && e.context.length ? el("div", { class: "beside", text: e.context.map(([f, v]) => `${f}: ${v}`).join("　") }) : null));
   }
   const value = (v, cls) => v ? el("td", { class: cls, text: v }) : el("td", { class: `${cls} empty-value`, text: "(空)" });
   if (e.kind === "changed") {
@@ -1694,6 +1698,7 @@ function openAddTarget() {
     const keys = s && w.header ? keysFor(s, w.header) : [];
     w.key = keys.length ? keys[0] : "";
     w.cols = null;
+    w.show = new Set();
     w.whereCol = "";
     w.whereVals = new Set();
   }
@@ -1752,19 +1757,20 @@ function openAddTarget() {
       const tr = el("tr", { class: cls });
       tr.append(el("th", cellsMode ? { text: r } : {
         text: r, title: "この行を見出しにする", tabindex: "0",
-        onclick: () => { w.header = r; w.key = ""; w.cols = null; w.whereCol = ""; w.whereVals = new Set(); const k = keysFor(s, r); if (k.length) w.key = k[0]; renderAll(); },
+        onclick: () => { w.header = r; w.key = ""; w.cols = null; w.show = new Set(); w.whereCol = ""; w.whereVals = new Set(); const k = keysFor(s, r); if (k.length) w.key = k[0]; renderAll(); },
       }));
       for (let j = 0; j < width; j++) {
         const v = row[j] || "";
         const h = headers[j];
-        const off = !cellsMode && w.header && r >= w.header && w.cols && h && !w.cols.has(h) && j !== keyIdx;
+        const shownOnly = !cellsMode && w.header && r >= w.header && h && showsOnly(h);
+        const off = !cellsMode && w.header && r >= w.header && w.cols && h && !w.cols.has(h) && j !== keyIdx && !shownOnly;
         const td = el("td", {
           text: v, title: v.length > 12 ? v : null, "data-r": r, "data-c": j + 1,
-          class: [off ? "off" : "", j === keyIdx && w.header && r >= w.header ? "keycol" : "", selected.has(`${r}:${j + 1}`) ? "sel" : ""].filter(Boolean).join(" ") || null,
+          class: [off ? "off" : "", shownOnly ? "show-only" : "", j === keyIdx && w.header && r >= w.header ? "keycol" : "", selected.has(`${r}:${j + 1}`) ? "sel" : ""].filter(Boolean).join(" ") || null,
         });
         if (isHdr && h) {
           td.tabIndex = 0;
-          td.title = j === keyIdx ? "行を見分ける列" : w.cols && !w.cols.has(h) ? "クリックで見る列に戻す" : "クリックで見る列から外す";
+          td.title = j === keyIdx ? "行を見分ける列" : columnTitle(h);
           td.addEventListener("click", () => toggleColumn(s, h));
           td.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleColumn(s, h); } });
         }
@@ -1805,13 +1811,30 @@ function openAddTarget() {
     return out;
   }
 
+  // A column is watched (a change in it is told), read only (shown beside a changed row, never told on its
+  // own; needs a key), or left out. A click moves it on to the next of these.
+  const showsOnly = (h) => !!(w.show && w.show.has(h));
+  const watched = (h) => !showsOnly(h) && (!w.cols || w.cols.has(h));
+  function columnTitle(h) {
+    if (watched(h)) return w.key ? "見る列（変わったら知らせる）。クリックで「見るだけ」にする" : "見る列。クリックで外す";
+    if (showsOnly(h)) return "見るだけの列（変わった行と一緒に出す。この列だけの変化は知らせない）。クリックで外す";
+    return "見ない列。クリックで見る列に戻す";
+  }
   function toggleColumn(s, h) {
     if (h === w.key) return;
     const all = headersOf(s).filter((x) => x && x !== w.key);
-    const cols = w.cols ? new Set(w.cols) : new Set(all);
-    cols.has(h) ? cols.delete(h) : cols.add(h);
-    w.cols = cols.size === all.length ? null : cols;
-    if (cols.size === 0) w.cols = new Set();
+    const cols = w.cols ? new Set(w.cols) : new Set(all.filter((x) => !showsOnly(x)));
+    if (!w.show) w.show = new Set();
+    if (watched(h)) {
+      cols.delete(h);
+      if (w.key) w.show.add(h);  // read only: shown beside a change, which needs rows told apart by a key
+    } else if (showsOnly(h)) {
+      w.show.delete(h);
+    } else {
+      cols.add(h);
+    }
+    const everything = all.filter((x) => !w.show.has(x));
+    w.cols = everything.every((x) => cols.has(x)) && cols.size === everything.length ? null : cols;
     renderAll();
   }
 
@@ -1897,13 +1920,19 @@ function openAddTarget() {
       el("option", { value: "", text: "行番号で比べる（行を挿入すると、ずれて見える）" }),
       ...headers.map((h) => el("option", { value: h, text: keys.includes(h) ? `${h}${h === keys[0] ? "（おすすめ）" : ""}` : `${h}（重なる値あり）` })));
     keySel.value = w.key;
-    keySel.addEventListener("change", () => { w.key = keySel.value; if (w.cols) w.cols.delete(w.key); renderAll(); });
+    keySel.addEventListener("change", () => {
+      w.key = keySel.value;
+      if (w.cols) w.cols.delete(w.key);
+      if (w.show) { w.show.delete(w.key); if (!w.key) w.show = new Set(); }  // read-only columns need a key
+      renderAll();
+    });
 
     const all = headers.filter((h) => h !== w.key);
     const colChips = el("div", { class: "chips" },
-      el("button", { type: "button", class: "chip", "aria-pressed": String(!w.cols), text: "すべて", title: "あとで増えた列も見る", onclick: () => { w.cols = null; renderAll(); } }),
+      el("button", { type: "button", class: "chip", "aria-pressed": String(!w.cols && !(w.show && w.show.size)), text: "すべて", title: "あとで増えた列も見る", onclick: () => { w.cols = null; w.show = new Set(); renderAll(); } }),
       all.map((h) => el("button", {
-        type: "button", class: "chip", "aria-pressed": String(!w.cols || w.cols.has(h)), text: h, onclick: () => toggleColumn(s, h),
+        type: "button", class: showsOnly(h) ? "chip show-only" : "chip", "aria-pressed": String(watched(h)),
+        text: showsOnly(h) ? `${h}（見るだけ）` : h, title: columnTitle(h), onclick: () => toggleColumn(s, h),
       })));
 
     const values = valuesFor(s, w.header);
@@ -1942,7 +1971,7 @@ function openAddTarget() {
         el("div", { class: "ctl" }, el("span", { class: "flabel", text: "行を見分ける列" }), keySel,
           el("small", { class: "help", text: "番号や ID のように、行ごとに違って変わらない列。行の追加・削除・並べ替えを正しく出せる" }))),
       el("div", { class: "ctl" }, el("span", { class: "flabel", text: "見る列" }), colChips,
-        el("small", { class: "help", text: "表の見出しをクリックしても外せる。外した列の変化は出さない" })),
+        el("small", { class: "help", text: "クリックするたびに 見る → 見るだけ → 見ない と切り替わる（表の見出しをクリックしても同じ）。見るだけの列は、ほかの列が変わった行と一緒に出すが、その列だけが変わっても知らせない（行を見分ける列が要る）" })),
       el("div", { class: "ctl" }, el("span", { class: "flabel", text: "この行だけ" }), filterable.length ? whereSel : el("small", { class: "help", text: "絞り込める列がありません" }), valueChips,
         mine),
     ];
@@ -2076,6 +2105,7 @@ function openAddTarget() {
             if (!w.cols.size) throw new Error("見る列を1つ以上選んでください");
             it.columns = headers.filter((h) => h && w.cols.has(h) && h !== w.key);
           }
+          if (w.key && w.show && w.show.size) it.show = headers.filter((h) => h && w.show.has(h) && h !== w.key);
           if (w.whereCol && w.whereVals.size) {
             const vars = w.peek.vars || {};
             const vals = [...w.whereVals].map((v) => { const vr = Object.entries(vars).find(([, x]) => x === v); return vr ? `\${${vr[0]}}` : v; });
@@ -2139,6 +2169,7 @@ function openAddTarget() {
       else {
         what = `${sheetPart}${approx}${rows} 行を、${w.key ? `「${w.key}」で行を見分けて` : "行番号で"}見張ります`;
         if (w.cols) what += `（見る列: ${[...w.cols].join("・") || "なし"}）`;
+        if (w.key && w.show && w.show.size) what += `（見るだけ: ${[...w.show].join("・")}）`;
         if (w.whereCol && w.whereVals.size) what += `。「${w.whereCol}」が ${[...w.whereVals].join("・")} の行だけ`;
         what += "。";
         if (w.cols && !w.cols.size) block.push("見る列を1つ以上選んでください");
