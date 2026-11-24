@@ -14,6 +14,7 @@ from pathlib import Path
 from . import fetchers, notify
 from .config import Config, Target
 from .diffing import annotate_hunks, inline_changes, record_diff
+from .fetchers.shared import shared_copies
 from .rules import alerts_for
 from .store import State, TargetStore, append_log
 from .timewords import every_label
@@ -155,7 +156,7 @@ def check_all(
 ) -> list[Result]:
     """Check targets side by side (a slow file share should not hold up the rest). Order is kept."""
     workers = max(1, min(config.workers, len(targets)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    with shared_copies(), ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(lambda t: check_target(t, config, data_dir, due_only=due_only, via=via), targets))
 
 

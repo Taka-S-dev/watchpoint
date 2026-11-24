@@ -27,6 +27,7 @@ from . import commands, editing
 from .check import Stale, Status, acknowledge, build_text, check_target, has_pending
 from .commands import is_allowed
 from .config import Config, ConfigError, Rule, Target, load_config
+from .fetchers.shared import shared_copies
 from .lock import Busy, data_lock
 from .peek import peek as peek_source
 from .peek import peek_office, peek_sample
@@ -311,7 +312,7 @@ class App:
         try:
             with data_lock(data_dir, wait=LOCK_WAIT_SECONDS):
                 workers = max(1, min(cfg.workers, len(targets)))
-                with ThreadPoolExecutor(max_workers=workers) as pool:
+                with shared_copies(), ThreadPoolExecutor(max_workers=workers) as pool:
                     list(pool.map(one, targets))
         except Busy as e:
             job.error = str(e)

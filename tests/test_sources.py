@@ -280,6 +280,33 @@ def test_an_attached_excel_is_downloaded_and_compared_by_its_rows(tmp_path: Path
     assert all(not q["query"] for q in server.requests)  # version, modificationDate and api left out
 
 
+def test_targets_reading_one_file_download_it_once_per_check(tmp_path: Path, server) -> None:
+    """Column B in one target and column G in another: one check downloads the workbook once."""
+    from watchpoint.check import check_all
+
+    server.routes["/files/qa.xlsx"] = lambda q, h: (200, XLSX, _book([["No.", "質問", "回答"], [1, "a", "b"]]))
+    url = server.url + "/files/qa.xlsx"
+    targets = [Target(name="b", source=url, cells=["B1:B9"]), Target(name="c", source=url, cells=["C1:C9"])]
+    results = check_all(targets, Config(targets=targets, workers=2), tmp_path / "data")
+    assert [r.status for r in results] == [Status.FIRST, Status.FIRST]
+    assert [q["path"] for q in server.requests].count("/files/qa.xlsx") == 1
+    # outside a check (trying one target), every fetch is its own
+    _run(targets[0], tmp_path / "other")
+    assert [q["path"] for q in server.requests].count("/files/qa.xlsx") == 2
+
+
+def test_a_failed_shared_fetch_fails_every_target_without_asking_again(tmp_path: Path, server) -> None:
+    from watchpoint.check import check_all
+
+    server.routes["/files/qa.xlsx"] = lambda q, h: (200, "text/html", b"<form id='loginform'></form>")
+    url = server.url + "/files/qa.xlsx"
+    targets = [Target(name="b", source=url, fail_after=1), Target(name="c", source=url, fail_after=1)]
+    results = check_all(targets, Config(targets=targets, workers=2), tmp_path / "data")
+    assert [r.status for r in results] == [Status.FAILED, Status.FAILED]
+    assert all("Web ページが返りました" in r.message for r in results)
+    assert [q["path"] for q in server.requests].count("/files/qa.xlsx") == 1
+
+
 def test_only_the_excel_files_attached_to_a_confluence_page_are_watched(tmp_path: Path, server) -> None:
     """attachments: ['*.xlsx'] watches the page's Excel files by their rows, not the page itself."""
     files = {

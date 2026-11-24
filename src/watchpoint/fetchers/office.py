@@ -7,8 +7,9 @@ import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .base import Fetched, sha256_file, textify_copy
+from .base import Fetched, FileBusy, sha256_file, textify_copy
 from .file import copy_source
+from .shared import copy_of, forget
 
 if TYPE_CHECKING:
     from ..config import Target
@@ -73,9 +74,14 @@ def fetch(target: Target, workdir: Path) -> Fetched:
     when it does not finish within the timeout.
     """
     timeout = target.timeout if "timeout" in target.model_fields_set else OFFICE_DEFAULT_TIMEOUT
-    dest = office_copy(target.source, workdir, timeout)
+    key = ("office", target.source)  # targets reading other columns of the same file share one copy
+    dest = copy_of(key, lambda where: office_copy(target.source, where, timeout), workdir)
     digest = sha256_file(dest)
-    return Fetched(textify_copy(dest, target, digest), digest)
+    try:
+        return Fetched(textify_copy(dest, target, digest), digest)
+    except FileBusy:
+        forget(key)  # the retry must take a new copy, not this one again
+        raise
 
 
 def office_copy(source: str, workdir: Path, timeout: float = OFFICE_DEFAULT_TIMEOUT) -> Path:

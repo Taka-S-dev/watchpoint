@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from ..config import url_suffix as suffix_of
 from .base import Fetched, sha256_file, textify_copy
 from .net import http_get
+from .shared import copy_of
 
 if TYPE_CHECKING:
     from ..config import Target
@@ -29,9 +30,19 @@ def latest_url(url: str) -> str:
 
 
 def download(target: Target, workdir: Path) -> Path:
-    """The file saved into workdir as original.<ext>; a page answered in its place (a sign-in) is refused."""
+    """The file saved into workdir as original.<ext>; a page answered in its place (a sign-in) is refused.
+
+    Targets reading the same file with the same credentials share one download per check.
+    """
+    url = latest_url(target.source)
+    auth = target.auth.model_dump_json() if target.auth else ""
+    key = ("download", url, auth, tuple(sorted(target.headers.items())), str(target.verify))
+    return copy_of(key, lambda where: _download(target, url, where), workdir)
+
+
+def _download(target: Target, url: str, workdir: Path) -> Path:
     suffix = suffix_of(target.source)
-    r = http_get(target, latest_url(target.source))
+    r = http_get(target, url)
     ctype = r.headers.get("content-type", "").lower()
     if "text/html" in ctype:
         raise PermissionError(
