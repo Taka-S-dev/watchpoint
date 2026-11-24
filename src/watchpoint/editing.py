@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from . import sharepoint
 from .config import Rule, Target, _translate
 from .report import kind_label
 from .textify import EXCEL_SUFFIXES, TEXT_SUFFIXES, WORD_SUFFIXES
@@ -213,6 +214,12 @@ def describe_source(source: str) -> dict:
     source = source.strip()
     if not source:
         return {"kind": None}
+    address = sharepoint.classify(source) if source.startswith(("http://", "https://")) else None
+    if address is not None and address.form != "file":  # a link for a browser: say which file it is, if it can
+        return {
+            "kind": None,
+            "link": {"label": address.label, "file_url": address.file_url, "advice": address.advice(source)},
+        }
     try:
         t = Target(name="x", source=source)
     except ValidationError:

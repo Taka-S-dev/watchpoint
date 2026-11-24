@@ -1531,6 +1531,7 @@ function openAddTarget() {
     try { info = await api("/api/config/describe", { source }); } catch (e) { info = { kind: null }; }
     if (seq !== lookSeq) return;
     w.info = info;
+    if (info.link) { w.loading = false; renderAll(); return; }  // a SharePoint link for a browser: nothing to read
     renderAll();
     try { peek = await api("/api/peek", { source }); } catch (e) { peek = { error: e.message }; }
     if (seq !== lookSeq) return;
@@ -1940,6 +1941,14 @@ function openAddTarget() {
     const p = w.peek;
     if (!w.source) {
       area.found.replaceChildren(el("p", { class: "help", text: "共有フォルダやパソコンのファイル・フォルダ、Web ページ、Confluence、SharePoint の Excel / Word を見張れます。エクスプローラーでファイルを Shift + 右クリック →「パスのコピー」で貼れます（前後の \" はそのままで構いません）。" }));
+      return;
+    }
+    const link = w.info && w.info.link;
+    if (link) {
+      // The address bar or 「リンクをコピー」 gives a link for a browser; the config needs the file's own address.
+      area.found.replaceChildren(...[el("p", { class: "warn", text: link.advice }),
+        link.file_url ? el("button", { type: "button", class: "primary", text: "ファイルの URL に置き換える",
+          onclick: () => { f.source.value = link.file_url; looking = look(); } }) : null].filter(Boolean));
       return;
     }
     const label = w.info && w.info.kind ? w.info.label : "";

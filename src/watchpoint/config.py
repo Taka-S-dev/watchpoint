@@ -13,6 +13,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
+from . import sharepoint
 from .commands import allowed_despite, command_line, safety_problem, unsafe_message
 from .store import safe_name
 from .textify import CellRefError, cell_refs
@@ -265,6 +266,10 @@ class Target(Strict):
             ("http://", "https://")
         ):
             raise ValueError(f"fetch: {self.kind} の source は http(s):// で始まる URL にしてください")
+        if self.command is None and self.source.startswith(("http://", "https://")):
+            address = sharepoint.classify(self.source)
+            if address is not None and address.form != "file":  # a link for a browser, not the file
+                raise ValueError(address.advice(self.source))
         if self.attachments is not None:
             if self.kind != "confluence" or ".atlassian.net" in self.source or "/rest/api/" in self.source:
                 raise ValueError(

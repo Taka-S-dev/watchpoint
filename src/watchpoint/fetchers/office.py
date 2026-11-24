@@ -7,6 +7,7 @@ import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .. import sharepoint
 from .base import Fetched, FileBusy, sha256_file, textify_copy
 from .file import copy_source
 from .shared import copy_of, forget
@@ -91,6 +92,11 @@ def office_copy(source: str, workdir: Path, timeout: float = OFFICE_DEFAULT_TIME
     Excel or Word opens the copy, so the original is never open in an Office app, not even read-only.
     """
     is_url = source.startswith(("http://", "https://"))
+    address = sharepoint.classify(source) if is_url else None
+    if address is not None and address.form != "file":
+        raise ValueError(address.advice(source))
+    if address is not None and address.file_url:
+        source = address.file_url  # ?web=1 and the like would open it in the browser instead
     suffix = Path(urllib.parse.urlsplit(source).path).suffix.lower() if is_url else Path(source).suffix.lower()
     if suffix not in (".xlsx", ".xlsm", ".docx"):
         raise ValueError(f"fetch: office で扱えるのは .xlsx / .xlsm / .docx です（{suffix or '拡張子なし'}）")
@@ -140,9 +146,7 @@ def office_copy(source: str, workdir: Path, timeout: float = OFFICE_DEFAULT_TIME
         except Exception as e:  # noqa: BLE001
             if timed_out.is_set():
                 raise _office_timeout(timeout, progid, source) from None
-            raise ConnectionError(
-                f"{_app_name(progid)} で開けませんでした（サインインかアクセス権を確かめてください）: {source}（{e}）"
-            ) from None
+            raise _open_failed(progid, source, e) from None
         finally:
             timer.cancel()
             app = None
@@ -158,10 +162,52 @@ def _app_name(progid: str) -> str:
     return "Word" if progid.startswith("Word") else "Excel"
 
 
+_SIGN_IN = (
+    "{app} を開き、［ファイル］→［アカウント］で、この SharePoint の組織のアカウントにサインインしているかを"
+    "確かめてください（いつもの {app} でこのファイルを一度開くと、サインインを求められることがあります）"
+)
+_INSTEAD = "それでも取れなければ、OneDrive の「ショートカットを追加」で同期し、手元に出てきたファイルを見張ってください"
+
+# What Excel and Word say (in Japanese or English) when they cannot open a file, and what it points to.
+_CAUSES = (
+    (("見つかりません", "存在しません", "could not be found", "couldn't find", "not found", "does not exist"),
+     "ファイルが見つかりません（URL が違うか、ファイルが移動・名前変更された）",
+     "ブラウザで同じ URL を開けるかを確かめてください。" + sharepoint.HOW_TO_FIND),
+    (("アクセス", "権限", "access", "permission", "denied", "unauthorized"),
+     "このファイルを開く権限がありません",
+     "ブラウザで開けるなら、{app} のサインインのアカウントが違う可能性があります。" + _SIGN_IN),
+    (("ネットワーク", "接続", "サーバー", "network", "connect", "server"),
+     "SharePoint につながりません",
+     "ネットワーク（VPN など）につながっているかを確かめてください"),
+)  # fmt: skip
+
+
+def _com_message(e: Exception) -> str:
+    """The text Office gave with a COM error (its excepinfo), or the error itself."""
+    info = getattr(e, "excepinfo", None) or (e.args[2] if len(getattr(e, "args", ())) > 2 else None)
+    if isinstance(info, tuple) and len(info) > 2 and info[2]:
+        return str(info[2]).strip()
+    return str(e)
+
+
+def _open_failed(progid: str, source: str, e: Exception) -> ConnectionError:
+    """Why Office could not open source, as far as its message says, and what to try next."""
+    app = _app_name(progid)
+    said = _com_message(e)
+    low = said.lower()
+    cause, step = "開けませんでした", _SIGN_IN + "。" + _INSTEAD
+    for words, what, then in _CAUSES:
+        if any(w in low for w in words):
+            cause, step = what, then
+            break
+    return ConnectionError(f"{app} で{cause}: {source}（{said}）\n次に: {step.format(app=app)}")
+
+
 def _office_timeout(timeout: float, progid: str, source: str) -> TimeoutError:
+    app = _app_name(progid)
     return TimeoutError(
-        f"{timeout:.0f} 秒たっても開けませんでした。サインインの画面が出ている可能性があります。"
-        f"いつもの {_app_name(progid)} で一度開いてサインインしてから、もう一度試してください: {source}"
+        f"{timeout:.0f} 秒たっても開けませんでした。見えない {app} にサインインの画面が出ている可能性があります: {source}"
+        f"\n次に: {_SIGN_IN.format(app=app)}。{_INSTEAD}"
     )
 
 
