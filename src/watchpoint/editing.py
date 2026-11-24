@@ -335,3 +335,32 @@ def set_expect_update(text: str, name: str, when: str | None) -> str:
     else:
         when = None
     return set_value(text, name, "expect_update", when)
+
+
+def remove_target(text: str, name: str) -> str:
+    """Return text without one target's entry and the comment lines right above it (they describe it).
+
+    Everything else, other comments included, stays as it is.
+    """
+    item = _find_item(text, name)
+    lines = text.split("\n")
+    first = item.start_mark.line
+    if not re.match(r"^\s*- ", lines[first]):
+        raise ValueError(
+            f"「{name}」の書き方が - で始まる形ではないので、画面からは消せません。「設定」で直してください"
+        )
+    last = _last_line(lines, item)
+    while first > 0 and lines[first - 1].lstrip().startswith("#"):
+        first -= 1
+    del lines[first : last + 1]
+    # the blank line that kept this entry apart from the next goes with it
+    prev = lines[first - 1] if first > 0 else ""
+    if first < len(lines) and not lines[first].strip() and (not prev.strip() or _TARGETS.match(prev)):
+        del lines[first]
+    elif prev and not prev.strip() and (first == len(lines) or not lines[first].startswith(" ")):
+        del lines[first - 1]  # it was the last entry: the blank line before it goes
+    out = "\n".join(lines)
+    raw = yaml.safe_load(out) or {}
+    if isinstance(raw, dict) and "targets" in raw and raw["targets"] is None:  # the last one went
+        out = re.sub(r"^targets\s*:[ \t]*(#.*)?$", "targets: []", out, count=1, flags=re.M)
+    return out

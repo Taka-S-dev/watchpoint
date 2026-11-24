@@ -16,6 +16,7 @@ PAIRS = [
     ("add", "add-bg"), ("del", "del-bg"), ("mod", "mod-bg"), ("col", "col-bg"), ("accent-text", "accent"),
     ("add", "panel"), ("del", "panel"),  # what is now / was before, in the table of changes
     ("add", "changed-bg"), ("del", "changed-bg"), ("muted", "changed-bg"),  # inside a changed cell of the sheet
+    ("failed", "panel"),  # the button that removes a target
 ]  # fmt: skip
 
 

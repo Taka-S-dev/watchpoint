@@ -549,6 +549,28 @@ class App:
             saved = self._save_config(new, checked["targets"], _digest(data))
         return {"name": name, **saved}
 
+    def remove_target(self, name: str, drop_history: bool = False) -> dict:
+        """Take one target out of the saved config (the file before is kept as .bak).
+
+        What it has fetched stays unless drop_history: a target added back under the same name
+        picks its history up again.
+        """
+        with self._jobs:
+            if self.job and self.job.finished is None:
+                raise ApiError(HTTPStatus.CONFLICT, "いまチェック中です。終わってから消してください")
+        cfg, data_dir = self._config()
+        store = TargetStore(data_dir, self._target(cfg, name).store_key)
+        saved = self._edit(lambda text: editing.remove_target(text, name))
+
+        def drop() -> bool:
+            if not store.dir.exists():
+                return False
+            shutil.rmtree(store.dir)
+            return True
+
+        dropped = self._locked(data_dir, drop) if drop_history else False
+        return {"name": name, "history_dropped": dropped, **saved}
+
     def add_target(self, text: str, item: object) -> dict:
         """The draft text with one more target from the form. Nothing is saved."""
         try:

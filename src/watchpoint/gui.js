@@ -1025,9 +1025,37 @@ function renderDetail(d) {
     el("button", { text: "いまの内容をテキストで見る", onclick: () => showPreview(d.name) }),
     d.has_copy ? el("button", { text: "保存したコピーを開く", title: "最後に取ってきたコピーを、読み取り専用で開きます。元のファイルは開きません", onclick: () => openCopy(d.name, false) }) : null,
     d.has_copy ? el("button", { text: "コピーのテキストを開く", onclick: () => openCopy(d.name, true) }) : null,
-    el("button", { text: "設定ファイルで編集", onclick: () => openInConfig(d.name) })));
+    el("button", { text: "設定ファイルで編集", onclick: () => openInConfig(d.name) }),
+    el("span", { class: "spacer" }),
+    el("button", { class: "danger", text: "この見張りを削除…", onclick: () => confirmRemove(d) })));
   $("detail").replaceChildren(...parts.filter(Boolean));
   renderProgress();
+}
+
+// Removing a target: the config keeps its previous version as .bak, and what was fetched stays unless
+// the person asks for it to go too (a target added back under the same name picks it up again).
+function confirmRemove(d) {
+  const keep = el("input", { type: "radio", name: "remove-history", value: "keep", checked: true });
+  const drop = el("input", { type: "radio", name: "remove-history", value: "drop" });
+  const go = el("button", { class: "danger", text: "削除する", onclick: async () => {
+    go.disabled = true;
+    try {
+      const r = await api("/api/targets/remove", { name: d.name, history: drop.checked ? "drop" : "keep" });
+      closeDialog(true);
+      toast(`「${d.name}」を削除しました（前の設定は .bak に残しています${r.history_dropped ? "。取った履歴も消しました" : ""}）`);
+      state.selected = null;
+      history.replaceState(null, "", "#");
+      await loadOverview();
+      const first = state.overview && state.overview.targets.find((t) => t.enabled);
+      if (first) select(first.name); else renderWelcome();
+    } catch (e) { toast(e.message, true); go.disabled = false; }
+  } });
+  openDialog(`「${d.name}」を削除`, [
+    el("p", { style: "margin-top:0", text: "設定ファイルからこの見張りを消します。前の設定は .bak に残ります。" }),
+    d.pending ? el("div", { class: "error", text: "まだ確認していない変更があります。" }) : null,
+    el("label", { class: "choice" }, keep, " 取った履歴は残す（同じ名前で足し直すと、続きから見られる）"),
+    el("label", { class: "choice" }, drop, ` 取った履歴も消す（${d.history.length} 件。元に戻せません）`),
+  ].filter(Boolean), null, { actions: [go] });
 }
 
 // ------------------------------------------------------------------ dialogs and small actions

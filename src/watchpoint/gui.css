@@ -37,6 +37,8 @@ button { font: inherit; cursor: pointer; border: 1px solid var(--line); backgrou
   border-radius: 6px; padding: 5px 12px; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.danger { color: var(--failed); border-color: var(--failed); }
+#dialog label.choice { display: block; margin: 6px 0; }
 button:disabled { opacity: .5; cursor: default; }
 input, select, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 8px; }
