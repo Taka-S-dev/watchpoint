@@ -944,6 +944,33 @@ function everyRow(d) {
     d.check_hours ? el("span", { class: "sub", text: `　チェックする時間帯: ${d.check_hours.label}` }) : null);
 }
 
+// A Confluence page can show an attached Excel inside it; its contents are not in the page's text, so a
+// change in the table would go unseen. Offer to watch the files themselves, beside the page.
+function embeddedHint(d) {
+  const files = d.embedded;
+  const name = uniqueTargetName(`${d.name}（埋め込みの表）`);
+  const add = el("button", { class: "mini", text: "中身を見張る見張りを足す", onclick: async () => {
+    add.disabled = true;
+    try {
+      await api("/api/targets/add", { item: { name, source: d.source, attachments: files } });
+      toast(`「${name}」を足しました。初回のチェックで基準を取ります`);
+      state.justAdded = name;
+      await loadOverview();
+      await select(name);
+    } catch (e) { toast(e.message, true); add.disabled = false; }
+  } });
+  return el("div", { class: "notice" },
+    el("p", { style: "margin:0 0 6px", text: `このページは添付ファイルを埋め込んで表示しています（${files.join("、")}）。埋め込みの中身はページの文字に含まれないので、この見張りでは表の中が変わっても分かりません。` }),
+    el("div", { class: "row" }, add, el("span", { class: "sub", text: `「${name}」として、添付ファイルの中身を比べる見張りを足します（ページの見張りはそのまま）` })));
+}
+
+function uniqueTargetName(base) {
+  const names = new Set(((state.overview && state.overview.targets) || []).map((t) => t.name));
+  let n = base;
+  for (let i = 2; names.has(n); i++) n = `${base} ${i}`;
+  return n;
+}
+
 function renderDetail(d) {
   state.detail = d;
   const note = el("input", { type: "text", id: "ack-note", placeholder: "メモ（任意。ログに残る）", "aria-label": "確認のメモ" });
@@ -972,6 +999,7 @@ function renderDetail(d) {
       el("b", { text: `要注意 ${d.alerts.length} 件（決めたルールに合わない）` }),
       el("ul", {}, d.alerts.map((a) => el("li", { text: a })))) : null,
     state.justAdded === d.name && !d.pending ? renderAdded(d) : null,
+    d.embedded && d.embedded.length ? embeddedHint(d) : null,
   ];
   // what changed comes before how an AI should read it: it is what the person opened this for
   if (d.changes) {

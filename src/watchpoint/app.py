@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import codecs
 import datetime as dt
+import fnmatch
 import hashlib
 import json
 import os
@@ -75,6 +76,18 @@ def _command_allowed(t: Target) -> bool | None:
     if not t.command:
         return None
     return is_allowed(t.command)
+
+
+def _unwatched_embedded(t: Target, cfg: Config, meta: dict) -> list[str]:
+    """Files a Confluence page shows through a viewer macro that no target watches the contents of.
+
+    The page's text holds nothing of them, so a change inside one would go unseen.
+    """
+    if t.kind != "confluence" or t.attachments:
+        return []
+    page = t.source.split("#")[0]
+    patterns = [p for o in cfg.targets if o.attachments and o.source.split("#")[0] == page for p in o.attachments]
+    return [n for n in meta.get("embedded") or [] if not any(fnmatch.fnmatch(n.lower(), p.lower()) for p in patterns)]
 
 
 def _hours_view(cfg: Config) -> dict | None:
@@ -224,6 +237,7 @@ class App:
             "next": next_due(t, state, cfg.check_hours),
             "check_hours": _hours_view(cfg),
             "has_copy": bool(state.snapshot),
+            "embedded": _unwatched_embedded(t, cfg, state.meta),
             "changes": asdict(ch) if ch else None,
             "history": [asdict(g) for g in generations(store, state)],
         }

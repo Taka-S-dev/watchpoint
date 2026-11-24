@@ -267,6 +267,7 @@ def _check(target: Target, config: Config, store: TargetStore, state: State) -> 
         fetched = fetchers.fetch(target, incoming)
         if settings_same and latest_ok and state.sha256 == fetched.digest:
             store.discard_incoming()
+            state.meta = fetched.meta or state.meta  # what is said about the page can change without its text
         elif settings_same and latest_ok and fetched.text == store.read_text(state.snapshot):
             store.discard_incoming()
             state.sha256 = fetched.digest

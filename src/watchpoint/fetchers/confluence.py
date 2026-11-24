@@ -209,7 +209,40 @@ def _fetch_page(target: Target, ref: PageRef, workdir: Path) -> Fetched:
     if page_id:
         head += _attachment_lines(target, ref.base, page_id)
     text = shape("\n".join(head) + "\n" + body, target, tables=False)
-    return Fetched(text, sha256_text(text), meta={"title": title, **rev})
+    meta = {"title": title, **rev}
+    embedded = _embedded_files(html)
+    if embedded:
+        meta["embedded"] = embedded
+    return Fetched(text, sha256_text(text), meta=meta)
+
+
+# Macros that show an attached file inside the page (the Office Excel / Word viewers, the file viewer).
+# What they show is drawn by the browser from the file, so none of it is in the page's text.
+_VIEWER_MACROS = re.compile(r"^(view(xls|doc|ppt|pdf|file|-file)|office-)", re.I)
+_FILE_IN = re.compile(r"/download/attachments/\d+/([^/?#\"']+)")
+EMBEDDABLE = (".xlsx", ".xlsm", ".xls", ".csv", ".docx", ".doc")
+
+
+def _embedded_files(html: str) -> list[str]:
+    """Names of attached files the page shows through a viewer macro: their contents are not in its text."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.select_one(BODY) or soup
+    names: set[str] = set()
+    for macro in body.select("[data-macro-name]"):
+        if not _VIEWER_MACROS.match(str(macro.get("data-macro-name", ""))):
+            continue
+        for node in [macro, *macro.find_all(True)]:
+            for value in node.attrs.values():
+                for v in value if isinstance(value, list) else [value]:
+                    m = _FILE_IN.search(str(v))
+                    if m:
+                        names.add(urllib.parse.unquote(m.group(1)))
+            alias = node.get("data-linked-resource-default-alias")
+            if alias:
+                names.add(str(alias))
+    return sorted(n for n in names if n.lower().endswith(EMBEDDABLE))
 
 
 MAX_ATTACHMENT_PAGES = 20  # pages of the attachment list followed, whatever the server answers

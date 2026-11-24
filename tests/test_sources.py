@@ -1,6 +1,7 @@
 """Web pages, JSON APIs, Confluence and Office, against a local fake server."""
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -462,3 +463,38 @@ def test_office_fetch_saves_a_copy_and_leaves_the_source_alone(tmp_path: Path) -
     assert r.status is Status.FIRST, r.message
     assert "[No.=1] 質問=保存先は？" in (r.snapshot / "text.txt").read_text(encoding="utf-8")
     assert (src.read_bytes(), src.stat().st_mtime_ns) == before
+
+
+EMBED = """<div class="conf-macro output-block" data-macro-name="viewxls" data-hasbody="false">
+<div class="office-viewer"><a href="/confluence/download/attachments/123/%E8%B3%AA%E5%95%8F%E8%A1%A8.xlsx?version=2">質問表.xlsx</a></div></div>
+<div data-macro-name="viewdoc"><img data-linked-resource-default-alias="手順.docx" src="/x.png"></div>
+<div data-macro-name="code"><a href="/confluence/download/attachments/123/sample.xlsx">a link in a code block</a></div>
+<p><a href="/confluence/download/attachments/123/other.xlsx">an ordinary link to an attachment</a></p>"""
+
+
+def test_files_a_page_shows_through_a_viewer_are_told_apart() -> None:
+    from watchpoint.fetchers.confluence import _embedded_files
+
+    html = CONF_PAGE.format(version=1, days=30, likes=0).replace("<h2>ログ</h2>", "<h2>ログ</h2>" + EMBED)
+    # only what a viewer macro draws: the text of the page holds nothing of it
+    assert _embedded_files(html) == ["手順.docx", "質問表.xlsx"]
+    assert _embedded_files(CONF_PAGE.format(version=1, days=30, likes=0)) == []
+
+
+def test_the_page_offers_to_watch_an_embedded_table_until_one_does(tmp_path: Path, server) -> None:
+    from watchpoint.app import App
+
+    html = CONF_PAGE.format(version=1, days=30, likes=0).replace("<h2>ログ</h2>", "<h2>ログ</h2>" + EMBED)
+    server.routes["/confluence/pages/viewpage.action"] = (200, "text/html; charset=utf-8", html)
+    server.routes["/confluence/pages/viewpageattachments.action"] = (200, "text/html; charset=utf-8", "<p>添付なし</p>")
+    page = server.url + "/confluence/pages/viewpage.action?pageId=123"
+    cfg = tmp_path / "targets.yaml"
+    cfg.write_text(f"targets:\n  - name: 設計\n    source: '{page}'\n", encoding="utf-8")
+    app = App(cfg)
+    app.start_check(None, False)
+    while app.job_view()["job"]["active"]:
+        time.sleep(0.02)
+    assert app.detail("設計")["embedded"] == ["手順.docx", "質問表.xlsx"]
+
+    app.add_and_save({"name": "設計の表", "source": page, "attachments": ["*.xlsx"]})
+    assert app.detail("設計")["embedded"] == ["手順.docx"]  # the table is watched now; the Word file is not
