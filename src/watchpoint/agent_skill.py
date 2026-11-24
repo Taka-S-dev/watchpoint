@@ -22,16 +22,32 @@ PLACES = {
     "agents": Path("~/.agents/skills"),
     "claude": Path("~/.claude/skills"),
 }
+# What an agent leaves in the home folder once it is used. Without --to, the skill goes only where one is,
+# so a person who never used Claude Code gets no ~/.claude folder from watchpoint.
+SIGNS = {
+    "agents": (Path("~/.agents"), Path("~/.copilot")),
+    "claude": (Path("~/.claude"),),
+}
+LABELS = {"agents": "Copilot CLI など", "claude": "Claude Code"}
+
+
+def places_in_use() -> tuple[list[str], list[str]]:
+    """The places whose agent is used on this PC, and the others. With none, the shared place (agents)."""
+    used = [p for p in PLACES if any(s.expanduser().is_dir() for s in SIGNS[p])]
+    if not used:
+        used = ["agents"]  # the place agents share: one that starts later finds it there
+    return used, [p for p in PLACES if p not in used]
 
 
 def text() -> str:
     return resources.files("watchpoint").joinpath("skill", "SKILL.md").read_text(encoding="utf-8")
 
 
-def destinations(places: list[str] | None, folder: Path | None) -> list[Path]:
+def destinations(places: list[str] | None, folder: Path | None, in_use_only: bool = False) -> list[Path]:
+    """Where the skill goes: the folder, the places named, or else every place (in_use_only: the used ones)."""
     if folder is not None:
         return [folder.expanduser() / NAME / "SKILL.md"]
-    names = places or list(PLACES)
+    names = places or (places_in_use()[0] if in_use_only else list(PLACES))
     unknown = [p for p in names if p not in PLACES]
     if unknown:
         raise ValueError(f"知らない場所です: {', '.join(unknown)}（{' / '.join(PLACES)} か --dir）")

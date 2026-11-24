@@ -67,11 +67,34 @@ def test_cli_installs_into_a_chosen_folder(tmp_path: Path) -> None:
 def test_default_places_are_the_personal_skill_folders(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("HOME", str(tmp_path))
-    dests = agent_skill.destinations(None, None)
+    dests = agent_skill.destinations(None, None)  # uninstall looks everywhere
     assert dests == [
         tmp_path / ".agents" / "skills" / "watchpoint" / "SKILL.md",
         tmp_path / ".claude" / "skills" / "watchpoint" / "SKILL.md",
     ]
+
+
+def test_install_goes_only_where_an_agent_is_used(monkeypatch, tmp_path: Path) -> None:
+    """A person who never used Claude Code gets no ~/.claude folder from watchpoint."""
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+
+    r = runner.invoke(app, ["skill", "install"])  # nothing used yet: the shared place only
+    assert r.exit_code == 0 and (tmp_path / ".agents" / "skills" / "watchpoint" / "SKILL.md").exists()
+    assert not (tmp_path / ".claude").exists() and "--to claude" in " ".join(r.output.split())
+
+    (tmp_path / ".claude").mkdir()  # Claude Code has been used
+    r = runner.invoke(app, ["skill", "install"])
+    assert (tmp_path / ".claude" / "skills" / "watchpoint" / "SKILL.md").exists()
+
+
+def test_install_where_named_even_if_unused(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    r = CliRunner().invoke(app, ["skill", "install", "--to", "claude"])
+    assert r.exit_code == 0 and (tmp_path / ".claude" / "skills" / "watchpoint" / "SKILL.md").exists()
+    assert not (tmp_path / ".agents").exists()
 
 
 def test_the_skill_says_how_to_add_a_target_well() -> None:

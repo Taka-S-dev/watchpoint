@@ -150,11 +150,12 @@ Copilot CLI や Claude Code などの AI エージェントに「watchpoint の�
 
 ```powershell
 uv tool install C:\path\to\watchpoint   # どこからでも watchpoint を動かせるようにする（エージェントはこれを呼ぶ）
-watchpoint skill install                 # ~/.agents/skills（Copilot CLI ほか）と ~/.claude/skills（Claude Code）に入れる
+watchpoint skill install                 # この PC で使っているエージェントの skills フォルダに入れる
 ```
 
 - スキルの中身は `watchpoint skill show` で見られる（原本はこのリポジトリの `src/watchpoint/skill/SKILL.md`。watchpoint に同梱されるので、どこに入れても `skill install` で写せる）。エージェントは、チェックして各見張りの読むポイントに沿って要約し、頼まれたときだけ `--seen` 付きで確認済みにする。設定ファイルの書き換え、コマンドの許可（`allow`）、タスク スケジューラの登録はしない
-- `--to agents` / `--to claude` で片方だけ、`--dir .github/skills` でリポジトリの中に入れる。watchpoint を新しくしたら、もう一度 `watchpoint skill install`（スキルも同じ版に更新される）
+- 入れる先は `~/.agents/skills`（Copilot CLI ほか）と `~/.claude/skills`（Claude Code）。何も指定しないと、使った跡のあるほうだけに入れる（`~/.claude` があれば Claude Code、`~/.agents` か `~/.copilot` があれば Copilot CLI など。どちらも無ければ `~/.agents` だけ）。使っていないエージェントのフォルダは作らない
+- `--to agents` / `--to claude` で、使った跡が無くてもそこに入れる。`--dir .github/skills` でリポジトリの中に入れる。watchpoint を新しくしたら、もう一度 `watchpoint skill install`（スキルも同じ版に更新される）
 - 自分で書いた同じ名前の `SKILL.md` は上書きしない（`--force` のときだけ）。`watchpoint skill uninstall` で消せる（watchpoint が入れたものだけ）
 - エージェントに頼むと、変更の中身はそのエージェントのサービスに送られる。画面の「AI 用にコピー」と違い、元のファイルの場所なども含まれる
 

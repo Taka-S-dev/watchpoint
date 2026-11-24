@@ -11,7 +11,10 @@ from rich.markup import escape
 from .common import console, err, skill_app
 
 PlaceOpt = typer.Option(
-    None, "--to", help="入れる先: agents（Copilot CLI ほか）/ claude（Claude Code）。省略すると両方。何回でも指定可"
+    None,
+    "--to",
+    help="入れる先: agents（Copilot CLI ほか）/ claude（Claude Code）。省略すると、この PC で使っているほうだけ"
+    "（どちらも見当たらなければ agents）。何回でも指定可",
 )
 DirOpt = typer.Option(None, "--dir", help="この skills フォルダに入れる（リポジトリの .github/skills など）")
 
@@ -26,10 +29,16 @@ def skill_install(
     from .. import agent_skill
 
     try:
-        dests = agent_skill.destinations(to, folder)
+        dests = agent_skill.destinations(to, folder, in_use_only=True)
     except ValueError as e:
         err.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(2)
+    if not to and folder is None:
+        for place in agent_skill.places_in_use()[1]:
+            console.print(
+                f"[dim]入れませんでした: {agent_skill.LABELS[place]}（この PC で使っていないようです。"
+                f"入れるなら --to {place}）[/dim]"
+            )
     failed = False
     for dest in dests:
         try:
