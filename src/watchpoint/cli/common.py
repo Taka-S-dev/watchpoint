@@ -53,7 +53,9 @@ err = Console(stderr=True)
 ConfigOpt = typer.Option(
     None, "--config", "-c", help="設定ファイル（既定: $WATCHPOINT_CONFIG か ~/.watchpoint/targets.yaml）"
 )
-TagOpt = typer.Option(None, "--tag", "-t", help="このタグの付いた見張りだけ（何回でも指定可）")
+TagOpt = typer.Option(
+    None, "--tag", "-t", help="このタグの付いた見張り、またはこのグループの見張りだけ（何回でも指定可）"
+)
 
 STATUS_STYLE = {
     Status.CHANGED: "bold yellow",
@@ -100,11 +102,13 @@ def data_locked(data_dir: Path):
 def select_targets(cfg: Config, names: list[str] | None, tags: list[str] | None = None) -> list[Target]:
     targets = cfg.targets
     if tags:
-        targets = [t for t in targets if set(tags) & set(t.tags)]
+        # a group is matched like a tag: "the 〇〇案件 ones" is asked the same way either way
+        targets = [t for t in targets if set(tags) & {*t.tags, *([t.group] if t.group else [])}]
         if not targets:
-            known = sorted({tag for t in cfg.targets for tag in t.tags})
+            known = sorted({tag for t in cfg.targets for tag in [*t.tags, *([t.group] if t.group else [])]})
             err.print(
-                f"[red]タグ {escape(', '.join(tags))} の見張りがありません[/red]（あるタグ: {escape(', '.join(known)) or 'なし'}）"
+                f"[red]タグ・グループ {escape(', '.join(tags))} の見張りがありません[/red]"
+                f"（あるもの: {escape(', '.join(known)) or 'なし'}）"
             )
             raise typer.Exit(2)
     if not names:

@@ -134,6 +134,9 @@ class Target(Strict):
     format: OutputFormat = "text"  # how to read the command's output
     fields: list[str] | None = None  # csv / tsv output without a header row: the column names
     tags: list[str] = Field(default_factory=list)
+    # Where the target sits in the page's list: targets with the same group show under one heading
+    # (pages of one project), selected and checked together. One group per target; tags cut across them.
+    group: str | None = None
     # Where "open the place" on the page goes, instead of the default (a file's folder, a web page itself):
     # an http(s) URL, or a folder or file path (a file is shown selected in Explorer, never opened).
     link: str | None = None
@@ -283,6 +286,12 @@ class Target(Strict):
 
     @model_validator(mode="after")
     def _consistent(self) -> Target:
+        if self.group is not None:
+            self.group = self.group.strip() or None  # an empty group is no group
+            if self.group and "/" in self.group:
+                raise ValueError(
+                    "group は 1 段だけです（/ で区切った階層はまだ使えません）。〇〇案件 のように書いてください"
+                )
         if self.show is not None:
             if not self.key:
                 raise ValueError("show（見るだけの列）は key（行を見分ける列）と一緒に使います")
@@ -738,6 +747,7 @@ vars:
 targets:
   - name: 質問表（サンプル）
     source: '\\server\share\project\質問表.xlsx'   # %USERPROFILE% や ~ も使える
+    # group: 〇〇案件     # 画面の一覧で同じ見出しの下にまとめる（同じ案件のページなど）
     tags: [〇〇案件]
     every: 1h            # この見張りだけ間隔を変えるとき（書かなければ上の every）
     sheets: [質問一覧]

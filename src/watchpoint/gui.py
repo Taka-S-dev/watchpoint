@@ -182,6 +182,9 @@ def api_routes(app: App) -> dict[str, dict]:
             "/api/rules/remove": lambda b: app.remove_rule(_str(b, "name"), int(b.get("index"))),
             "/api/rules/expect": lambda b: app.set_expect_update(_str(b, "name"), _str(b, "when", required=False)),
             "/api/targets/remove": lambda b: app.remove_target(_str(b, "name"), b.get("history") == "drop"),
+            "/api/targets/group": lambda b: app.set_group(
+                _names(b) or [_str(b, "name")], _str(b, "group", required=False)
+            ),
             "/api/targets/every": lambda b: app.set_every(_str(b, "name"), _str(b, "every", required=False)),
         },
     }

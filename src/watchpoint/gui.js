@@ -5,6 +5,8 @@ const $ = (id) => document.getElementById(id);
 const state = {
   overview: null, selected: decodeURIComponent(location.hash.slice(1)) || null, detail: null,
   tags: new Set(), job: null, polling: false, known: null, tab: "targets", autoRun: false,
+  collapsed: new Set(), // groups closed in the list (remembered as wp-collapsed)
+  dragging: null,  // the names being dragged onto a group
   starting: null, jobStart: 0,  // the names asked for, until the answer to /api/check arrives; when it was pressed
   picked: new Set(), lastPick: null, order: [],
   config: { hash: null, saved: "", targets: [] },
@@ -209,7 +211,7 @@ function shownTargets() {
   const q = $("search").value.trim();
   const only = $("pending-only").checked;
   return state.overview.targets.filter((t) =>
-    (!q || t.name.includes(q)) &&
+    (!q || t.name.includes(q) || (t.group || "").includes(q)) &&
     (!state.tags.size || t.tags.some((x) => state.tags.has(x))) &&
     (!only || needsLook(t)));
 }
@@ -223,8 +225,18 @@ function renderList() {
     list.replaceChildren(el("li", { class: "empty", text: state.overview.targets.length ? "当てはまる見張りがありません" : "まだ見張りがありません" }));
   } else {
     const ordered = [...shown.filter((t) => t.enabled), ...shown.filter((t) => !t.enabled)];
-    state.order = ordered.map((t) => t.name);
-    list.replaceChildren(...ordered.map((t) => {
+    // Targets with a group show under its heading (in the order the groups first appear); the rest follow.
+    const groups = new Map();
+    const loose = [];
+    for (const t of ordered) {
+      if (!t.group) { loose.push(t); continue; }
+      if (!groups.has(t.group)) groups.set(t.group, []);
+      groups.get(t.group).push(t);
+    }
+    const open = (g) => !state.collapsed.has(g);
+    const looseOpen = !groups.size || open(LOOSE);
+    state.order = [...[...groups].flatMap(([g, ts]) => (open(g) ? ts.map((t) => t.name) : [])), ...(looseOpen ? loose.map((t) => t.name) : [])];
+    const row = (t, inGroup) => {
       const status = running.has(t.name) ? "チェック中" : t.status;
       const picked = state.picked.has(t.name);
       const box = el("input", {
@@ -237,12 +249,12 @@ function renderList() {
         if ((e.ctrlKey || e.metaKey || e.shiftKey) && t.enabled) { e.preventDefault(); togglePick(t.name, e.shiftKey); return; }
         select(t.name);
       };
-      const current = t.name === (state.selected ?? ordered[0].name);
+      const current = t.name === (state.selected ?? state.order[0]);
       const onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); select(t.name); } };
       // a plain list (each row holds a checkbox, which an ARIA option may not): the selected row is the
       // one tab stop in it and says so with aria-current
-      return el("li", { "aria-current": String(t.name === state.selected),
-        tabindex: current ? "0" : "-1", class: [t.enabled ? "" : "disabled", picked ? "picked" : ""].join(" ").trim() || null, onclick, onkeydown },
+      const li = el("li", { "aria-current": String(t.name === state.selected),
+        tabindex: current ? "0" : "-1", class: [t.enabled ? "" : "disabled", picked ? "picked" : "", inGroup ? "in-group" : ""].join(" ").trim() || null, onclick, onkeydown },
         box,
         el("div", { class: "item" },
           el("div", { class: "row1" },
@@ -254,7 +266,17 @@ function renderList() {
             el("span", { text: t.kind }),
             el("span", { title: `最終チェック ${short(t.last_checked)}`, text: t.last_checked ? `チェック ${brief(short(t.last_checked))}` : "未チェック" }),
             t.next ? el("span", { title: `次回 ${t.next}`, text: `次 ${brief(t.next)}` }) : null)));
-    }));
+      return draggableRow(li, t);
+    };
+    const rows = [];
+    for (const [g, ts] of groups) {
+      rows.push(groupRow(g, ts));
+      if (open(g)) rows.push(...ts.map((t) => row(t, true)));
+    }
+    if (groups.size && loose.length) rows.push(groupRow(LOOSE, loose));
+    if (looseOpen) rows.push(...loose.map((t) => row(t, groups.size > 0)));
+    rows.push(...dropZones(groups.size > 0 && loose.length > 0));  // shown only while a target is being dragged
+    list.replaceChildren(...rows);
   }
   renderCheckButtons(shown);
   renderSelBar(shown);
@@ -267,6 +289,128 @@ function renderList() {
       runAck(pendingShown.map((t) => t.name), "");
     }
   };
+}
+
+// A group's heading: open or close it, pick all of it, and what needs a look inside it while it is closed.
+// key: the group's name, or LOOSE for the targets in none. A drop on the heading moves the dragged ones there.
+const LOOSE = "\u0000none";  // no group name can hold this
+function groupRow(key, ts) {
+  const label = key === LOOSE ? "グループなし" : key;
+  const enabled = ts.filter((t) => t.enabled);
+  const picked = enabled.filter((t) => state.picked.has(t.name)).length;
+  const box = el("input", { type: "checkbox", class: "pick", "aria-label": `「${label}」の見張りをすべて選ぶ`, disabled: !enabled.length,
+    title: "この中の見張りをすべて選ぶ・外す" });
+  box.checked = enabled.length > 0 && picked === enabled.length;
+  box.indeterminate = picked > 0 && picked < enabled.length;
+  box.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const all = picked === enabled.length;
+    for (const t of enabled) all ? state.picked.delete(t.name) : state.picked.add(t.name);
+    renderList();
+  });
+  const isOpen = !state.collapsed.has(key);
+  const toggle = () => {
+    isOpen ? state.collapsed.add(key) : state.collapsed.delete(key);
+    store("wp-collapsed", JSON.stringify([...state.collapsed]));
+    renderList();
+  };
+  const count = (pred) => ts.filter(pred).length;
+  const changed = count((t) => t.status === "変更あり");
+  const failed = count((t) => t.status === "取得失敗");
+  const alerts = count((t) => t.alerts && t.alerts.length);
+  const pending = count((t) => t.pending && t.status !== "変更あり");
+  return dropTarget(el("li", { class: key === LOOSE ? "group loose" : "group", onclick: toggle,
+    title: isOpen ? "押すと畳む（見張りをここへドラッグすると、この中に入る）" : "押すと開く（見張りをここへドラッグすると、この中に入る）" },
+    el("button", { class: "twisty", "aria-expanded": String(isOpen), "aria-label": `「${label}」を${isOpen ? "畳む" : "開く"}`,
+      text: isOpen ? "▾" : "▸", onclick: (e) => { e.stopPropagation(); toggle(); } }),
+    el("span", { class: "name" }, el("span", { class: "folder", "aria-hidden": "true", text: key === LOOSE ? "" : "▤" }), label,
+      el("span", { class: "gcount", text: `${ts.length}` })),
+    alerts ? el("span", { class: "badge alert", text: `要注意 ${alerts}` }) : null,
+    changed ? el("span", { class: "badge changed", text: `変更あり ${changed}` }) : null,
+    failed ? el("span", { class: "badge failed", text: `取得失敗 ${failed}` }) : null,
+    pending ? el("span", { class: "dot", role: "img", title: `前に取った未確認の変更あり ${pending} 件`, "aria-label": "未確認の変更あり" }) : null,
+    box),
+  (names) => moveToGroup(names, key === LOOSE ? null : key));
+}
+
+// ---- grouping by dragging: a target (or the picked ones, when it is one of them) dropped on a group's
+// heading goes into it; "＋ 新しいグループ" asks a name; "グループから外す" takes it out. The selection bar's
+// "グループに入れる…" does the same without a mouse.
+
+function draggableRow(li, t) {
+  li.draggable = true;
+  li.addEventListener("dragstart", (e) => {
+    const names = state.picked.has(t.name) ? [...state.picked] : [t.name];
+    state.dragging = names;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", names.join("\n"));
+    $("list").classList.add("dragging");
+  });
+  li.addEventListener("dragend", () => { state.dragging = null; $("list").classList.remove("dragging"); });
+  return li;
+}
+
+function dropTarget(node, onDrop) {
+  node.addEventListener("dragover", (e) => {
+    if (!state.dragging) return;
+    e.preventDefault();  // this one takes the drop
+    e.dataTransfer.dropEffect = "move";
+    node.classList.add("drop-on");
+  });
+  node.addEventListener("dragleave", () => node.classList.remove("drop-on"));
+  node.addEventListener("drop", (e) => {
+    e.preventDefault();
+    node.classList.remove("drop-on");
+    const names = state.dragging;
+    state.dragging = null;
+    $("list").classList.remove("dragging");
+    if (names && names.length) onDrop(names);
+  });
+  return node;
+}
+
+function dropZones(looseHeading) {
+  return [
+    dropTarget(el("li", { class: "dropzone", text: "＋ 新しいグループ（ここに落とす）" }), (names) => groupDialog(names)),
+    looseHeading ? null : dropTarget(el("li", { class: "dropzone out", text: "グループから外す（ここに落とす）" }), (names) => moveToGroup(names, null)),
+  ].filter(Boolean);
+}
+
+async function moveToGroup(names, group) {
+  const moving = names.filter((n) => {
+    const t = state.overview.targets.find((x) => x.name === n);
+    return t && (t.group || null) !== group;
+  });
+  if (!moving.length) return;
+  try {
+    await api("/api/targets/group", { names: moving, group });
+    if (group) state.collapsed.delete(group);  // show where they went
+    toast(group ? `${moving.length} 件をグループ「${group}」に入れました（設定ファイルに保存）`
+      : `${moving.length} 件をグループから外しました（設定ファイルに保存）`);
+    await loadOverview();
+    if (state.selected) await select(state.selected, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+// Choosing a group by name (a new one, or one there is): from a drop on "＋ 新しいグループ" and from the selection bar.
+function groupDialog(names) {
+  const box = el("input", { type: "text", list: "group-list-dialog", placeholder: "〇〇案件", "aria-label": "グループの名前",
+    autocomplete: "off", style: "width:18em" });
+  const go = el("button", { class: "primary", text: "グループに入れる", onclick: () => {
+    const g = box.value.trim();
+    if (!g) { box.focus(); return; }
+    closeDialog(true);
+    moveToGroup(names, g);
+  } });
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
+  const grouped = names.some((n) => (state.overview.targets.find((t) => t.name === n) || {}).group);
+  const out = grouped ? el("button", { text: "グループから外す", onclick: () => { closeDialog(true); moveToGroup(names, null); } }) : null;
+  openDialog(`${names.length} 件をグループに入れる`, [
+    el("p", { style: "margin-top:0", text: names.join("、") }),
+    el("div", { class: "row" }, "グループ: ", box, groupList("group-list-dialog")),
+    el("p", { class: "sub", text: "ある名前を選ぶとそのグループに、新しい名前ならグループを作って入れます。" }),
+  ], null, { actions: [out, go].filter(Boolean) });
+  box.focus();
 }
 
 // ------------------------------------------------------------------ picking several
@@ -325,6 +469,7 @@ function renderSelBar(shown) {
         }
       },
     }) : null,
+    el("button", { text: "グループに入れる…", onclick: () => groupDialog(names) }),
     el("button", { text: "AI 用にコピー", onclick: () => copyForAI(names) }),
   ].filter(Boolean));  // replaceChildren would show a null as the text "null"
 }
@@ -1022,6 +1167,19 @@ function uniqueTargetName(base) {
   return n;
 }
 
+// The groups there are, offered when a group is typed (the add form and the target view).
+function groupList(id = "group-list") {
+  const names = [...new Set(((state.overview && state.overview.targets) || []).map((t) => t.group).filter(Boolean))].sort();
+  return el("datalist", { id }, names.map((g) => el("option", { value: g })));
+}
+
+// The group a target is in, said plainly, with the same dialog as the selection bar to change it.
+function groupEdit(d) {
+  return el("div", {}, "グループ: ",
+    d.group ? el("b", { text: d.group }) : el("span", { class: "sub", text: "なし" }), " ",
+    el("button", { class: "mini", text: d.group ? "変更…" : "グループに入れる…", onclick: () => groupDialog([d.name]) }));
+}
+
 function renderDetail(d) {
   state.detail = d;
   const note = el("input", { type: "text", id: "ack-note", placeholder: "メモ（任意。ログに残る）", "aria-label": "確認のメモ" });
@@ -1045,6 +1203,7 @@ function renderDetail(d) {
         d.place ? el("button", { class: "mini", text: d.place.label, title: d.place.where, onclick: () => openPlace(d.name) })
           : d.command ? null : el("span", { class: "sub", title: "SharePoint のファイルを直接開くと、元のファイルを編集できる状態で開いてしまうため", text: "（開く場所は、設定の link: で決められます）" })),
       d.enabled ? everyRow(d) : null,
+      groupEdit(d),
       meta),
     d.command && !d.command_allowed ? allowBox(d) : d.error ? el("div", { class: "error", text: d.error }) : null,
     d.alerts && d.alerts.length ? el("div", { class: "alerts" },
@@ -1565,6 +1724,7 @@ function openAddTarget() {
     notify: el("textarea", { rows: 2, placeholder: "自分宛ての新しい質問があるとき" }),
     every: el("select", { "aria-label": "チェックの間隔" }, everyOptions()),
     tags: el("input", { type: "text", placeholder: "〇〇案件, 毎週" }),
+    group: el("input", { type: "text", list: "group-list", placeholder: "〇〇案件（空ならグループなし）", autocomplete: "off" }),
     link: el("input", { type: "text", placeholder: "https://… や \\\\server\\share\\フォルダ" }),
     selector: el("input", { type: "text", placeholder: "main article（空ならページ全体）" }),
     attachments: el("input", { type: "text", placeholder: "*.xlsx（空ならページ）" }),
@@ -2081,7 +2241,7 @@ function openAddTarget() {
 
   function build() {
     const it = {
-      name: f.name.value.trim(), source: w.source, tags: splitList(f.tags.value), every: f.every.value || null, link: f.link.value.trim() || null,
+      name: f.name.value.trim(), group: f.group.value.trim() || null, source: w.source, tags: splitList(f.tags.value), every: f.every.value || null, link: f.link.value.trim() || null,
       points: f.points.value, notify_when: f.notify.value,
     };
     if (!it.source) throw new Error("見張る場所を入れてください");
@@ -2297,9 +2457,11 @@ function openAddTarget() {
     step("2", "どう見張りますか", area.modes),
     step("3", "どこを見ますか", area.picker),
     pointsStep = step("4", "AI への指示（任意）", formField("読むポイント", f.points, "変わったとき、変更と一緒に出す。「AI 用にコピー」で貼ると、AI がこれに沿って要約する")),
-    el("details", { class: "advanced" }, el("summary", { text: "名前・間隔・知らせ方" }),
+    el("details", { class: "advanced" }, el("summary", { text: "名前・グループ・間隔・知らせ方" }),
+      groupList(),
       el("div", { class: "cols2" },
         formField("名前", f.name, "一覧や通知に出る。場所から自動で付ける", true),
+        formField("グループ", f.group, "同じ案件のページなどをまとめる。一覧で見出しの下に並び、見出しでまとめて選べる"),
         formField("チェックの間隔", f.every, "自動チェックと「時間が来たものだけ」で使う。短くしすぎると、取りに行く先（共有フォルダや Web）の負担になる")),
       el("div", { class: "cols2" },
         formField("タグ", f.tags, "カンマで区切る。一覧の絞り込みに使う"),
@@ -2365,7 +2527,7 @@ function onKey(e) {
   if (e.ctrlKey && e.key === "s" && state.tab === "config" && !$("dialog").open) { e.preventDefault(); saveConfig(); return; }
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
   if (typing || e.ctrlKey || e.metaKey || e.altKey || $("dialog").open || state.tab !== "targets") return;
-  const names = state.overview ? shownTargets().map((t) => t.name) : [];
+  const names = state.overview ? state.order : [];  // as the list shows them: grouped, closed groups left out
   const i = names.indexOf(state.selected);
   const inList = $("list").contains(document.activeElement);
   const move = (name) => { select(name); if (inList) focusSelected(); };
@@ -2407,6 +2569,7 @@ setupAuto();
 setupConfig();
 
 (async () => {
+  try { state.collapsed = new Set(JSON.parse(store("wp-collapsed") || "[]")); } catch (e) { state.collapsed = new Set(); }
   await loadOverview();
   if (!state.overview) return;
   const names = state.overview.targets.map((t) => t.name);

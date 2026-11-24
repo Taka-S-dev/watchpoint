@@ -23,7 +23,7 @@ from .timewords import check_every, parse_deadline
 
 # The order a person reads a target in: what and where, how, then what to tell.
 ORDER = (
-    "name", "source", "fetch", "watch", "tags", "every", "link",
+    "name", "group", "source", "fetch", "watch", "tags", "every", "link",
     "attachments", "sheets", "header_row", "key", "columns", "show", "where", "cells", "selector",
     "report", "points", "notify_when", "expect_update", "rules",
 )  # fmt: skip
@@ -153,7 +153,7 @@ def add_target(text: str, item: dict) -> str:
     return out if out.endswith("\n") else out + "\n"
 
 
-_BEFORE_EVERY = ("name", "source", "fetch", "watch", "tags")  # every goes after these (ORDER)
+_BEFORE_EVERY = ("name", "group", "source", "fetch", "watch", "tags")  # every goes after these (ORDER)
 
 
 def set_every(text: str, name: str, every: str | None) -> str:

@@ -182,6 +182,7 @@ class App:
                     "kind": kind_label(t),
                     "source": t.source,
                     "tags": t.tags,
+                    "group": t.group,
                     "every": t.every,
                     "enabled": t.enabled,
                     "status": s.last_status or "未チェック",
@@ -218,6 +219,7 @@ class App:
             "kind": kind_label(t),
             "source": t.source,
             "tags": t.tags,
+            "group": t.group,
             "points": t.points.strip(),
             "notify_when": t.notify_when.strip(),
             "status": state.last_status or "未チェック",
@@ -549,6 +551,23 @@ class App:
             if not checked["ok"]:
                 raise ApiError(HTTPStatus.UNPROCESSABLE_ENTITY, checked["error"])
             return self._save_config(new, checked["targets"], _digest(data))
+
+    def set_group(self, names: list[str], group: str | None) -> dict:
+        """Move targets into a group (None: out of any) with one write of the config file.
+
+        All or nothing: when one of them cannot be changed here (written { … }, or in an included
+        file), the file is left as it was and the reason is given.
+        """
+        if not names:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "動かす見張りがありません")
+        group = (group or "").strip() or None
+
+        def change(text: str) -> str:
+            for name in names:
+                text = editing.set_value(text, name, "group", group)
+            return text
+
+        return {"names": names, "group": group, **self._edit(change)}
 
     def set_every(self, name: str, every: str | None) -> dict:
         """Change one target's interval in the saved config file (None: follow the config's every)."""

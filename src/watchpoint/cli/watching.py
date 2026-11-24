@@ -48,17 +48,25 @@ def init(config: Path | None = ConfigOpt) -> None:
 
 @app.command("list")
 def list_cmd(config: Path | None = ConfigOpt, tag: list[str] | None = TagOpt) -> None:
-    """設定されている見張りの一覧（name・比べ方・タグ・間隔・場所）。"""
+    """設定されている見張りの一覧（name・グループ・比べ方・タグ・間隔・場所）。"""
     cfg, path, _ = load_targets(config)
     table = Table(caption=f"設定: {escape(str(path))}")
     table.add_column("name", no_wrap=True)
+    table.add_column("グループ")
     table.add_column("比べ方", no_wrap=True)
     table.add_column("タグ")
     table.add_column("間隔", no_wrap=True)
     table.add_column("場所", overflow="fold")
     for t in select_targets(cfg, None, tag):
         name = escape(t.name) + ("" if t.enabled else " [dim](無効)[/dim]")
-        table.add_row(name, escape(kind_label(t)), escape(", ".join(t.tags)), t.every or "-", escape(t.source))
+        table.add_row(
+            name,
+            escape(t.group or ""),
+            escape(kind_label(t)),
+            escape(", ".join(t.tags)),
+            t.every or "-",
+            escape(t.source),
+        )
     console.print(table)
 
 
