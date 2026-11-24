@@ -13,7 +13,7 @@ const state = {
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
-    if (k === "class") node.className = v;
+    if (k === "class") { if (v) node.className = v; }  // no class: none, not the word "null"
     else if (k === "text") node.textContent = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
     else if (v !== false && v != null) node.setAttribute(k, v === true ? "" : v);
