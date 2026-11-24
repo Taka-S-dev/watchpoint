@@ -17,41 +17,54 @@
     <button role="tab" id="tab-config" data-tab="config" aria-selected="false" aria-controls="view-config" tabindex="-1">設定</button>
     <button role="tab" id="tab-log" data-tab="log" aria-selected="false" aria-controls="view-log" tabindex="-1">ログ</button>
   </nav>
-  <span id="counts"></span>
+  <span id="counts" aria-live="polite"></span>
+</header>
+<div id="watch-toolbar" class="watch-toolbar" role="region" aria-label="見張りのチェック">
+  <button id="check-all" class="check primary">すべてチェック</button>
+  <button id="check-due" class="check" title="チェックの間隔が過ぎた見張りだけをチェックする">時間が来たものだけ</button>
+  <button id="copy-ai" title="未確認の変更と取得失敗を、Copilot などの AI に貼れる形でコピーする（check -f md -C と同じ）">AI 用にコピー</button>
+  <details class="check-options" id="check-options">
+    <summary>自動チェック<span id="auto-status"></span></summary>
+    <div class="check-options-body">
+      <label class="toggle" title="この画面を開いている間、各見張りをそれぞれのチェックの間隔（既定 30 分）でチェックする">
+        <input type="checkbox" id="auto"> 開いている間、自動でチェック</label>
+      <p class="help">画面を閉じた後の自動チェックは、タスク スケジューラの設定で行います。</p>
+    </div>
+  </details>
   <span class="spacer"></span>
   <span id="progress" aria-live="polite"></span>
-  <label class="toggle" title="この画面を開いている間、各見張りをそれぞれのチェックの間隔（既定 30 分）でチェックし、新しい変更を通知する">
-    <input type="checkbox" id="auto"> 開いている間、自動でチェック</label>
-  <button id="copy-ai" title="未確認の変更と取得失敗を、Copilot などの AI に貼れる形でコピーする（check -f md -C と同じ）">AI 用にコピー</button>
-  <button id="check-due" class="check" title="チェックの間隔が過ぎた見張りだけをチェックする">時間が来たものだけ</button>
-  <button id="check-all" class="check primary">すべてチェック</button>
-</header>
+</div>
 
 <main id="view-targets" class="view" role="tabpanel" aria-labelledby="tab-targets">
   <aside id="side">
     <div id="filters">
       <button id="add-target" title="ファイルの中を見ながら、見張りを追加する">＋ 見張りを追加</button>
-      <input id="search" type="search" placeholder="名前で絞り込む（/）" aria-label="名前で絞り込む">
+      <input id="search" type="search" placeholder="名前・グループで検索（/）" aria-label="名前・グループで検索">
       <div id="tags"></div>
       <label title="未確認の変更・取得失敗・要注意のある見張りだけ"><input type="checkbox" id="pending-only"> 見ておきたいものだけ</label>
+      <div class="filter-status"><span id="filter-count" role="status"></span><button id="clear-filters" class="mini" hidden>絞り込みを解除</button></div>
       <button id="ack-shown" hidden></button>
       <div id="selbar" role="region" aria-label="選んだ見張りの操作" hidden></div>
     </div>
     <ul id="list" aria-label="見張り"></ul>
-    <div class="keys"><span><kbd>j</kbd><kbd>k</kbd> 移動</span><span><kbd>x</kbd> 選ぶ</span><span><kbd>c</kbd> チェック</span><span><kbd>a</kbd> 確認済みに</span><span><kbd>f</kbd> 全画面</span><span><kbd>/</kbd> 絞り込み</span><span><kbd>Esc</kbd> 選択を解除</span></div>
+    <details class="keys"><summary>キーボード操作</summary><div><span><kbd>j</kbd><kbd>k</kbd> 移動</span><span><kbd>x</kbd> 選ぶ</span><span><kbd>c</kbd> チェック</span><span><kbd>a</kbd> 確認済みに</span><span><kbd>f</kbd> 全画面</span><span><kbd>/</kbd> 絞り込み</span><span><kbd>Esc</kbd> 選択を解除</span></div></details>
   </aside>
   <section id="detail"><p class="empty">左の一覧から選んでください。</p></section>
 </main>
 
 <main id="view-config" class="view" role="tabpanel" aria-labelledby="tab-config" hidden>
   <section id="configview">
+    <div class="config-guide">
+      <div><h2>見張りの設定</h2><p class="sub">新しい見張りはフォームで追加できます。間隔やグループは「見張り」画面で変更できます。</p></div>
+      <button id="config-add" title="画面で選んで見張りを追加する（編集欄に書き足すだけ。保存は「保存」で）">＋ 見張りを追加</button>
+    </div>
+    <p class="sub" id="config-help">詳細設定は下の YAML を編集します。「誤りを調べる」「保存前の内容で試す」で確かめてから保存してください。</p>
     <div class="actions" style="margin:0">
       <strong>設定ファイル</strong><code id="config-path" class="sub" style="margin:0"></code>
       <span class="spacer"></span><span id="config-state" class="sub" style="margin:0"></span>
     </div>
-    <textarea id="config-text" spellcheck="false" aria-label="設定ファイルの中身"></textarea>
+    <textarea id="config-text" spellcheck="false" aria-label="設定ファイルの中身" aria-describedby="config-help"></textarea>
     <div class="actions" style="margin:0">
-      <button id="config-add" title="画面で選んで見張りを追加する（編集欄に書き足すだけ。保存は「保存」で）">見張りを追加</button>
       <button id="config-validate">誤りを調べる</button>
       <select id="config-target" aria-label="試す見張り"></select>
       <button id="config-try" title="保存する前の内容のまま、その見張りを取ってきてテキストにする">保存前の内容で試す</button>

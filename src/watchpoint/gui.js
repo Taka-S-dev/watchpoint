@@ -208,10 +208,10 @@ function renderTags() {
 }
 
 function shownTargets() {
-  const q = $("search").value.trim();
+  const q = $("search").value.trim().toLocaleLowerCase();
   const only = $("pending-only").checked;
   return state.overview.targets.filter((t) =>
-    (!q || t.name.includes(q) || (t.group || "").includes(q)) &&
+    (!q || t.name.toLocaleLowerCase().includes(q) || (t.group || "").toLocaleLowerCase().includes(q)) &&
     (!state.tags.size || t.tags.some((x) => state.tags.has(x))) &&
     (!only || needsLook(t)));
 }
@@ -219,9 +219,12 @@ function shownTargets() {
 function renderList() {
   if (!state.overview) return;
   const shown = shownTargets();
+  $("filter-count").textContent = `${shown.length} / ${state.overview.targets.length} 件`;
+  $("clear-filters").hidden = !filtering();
   const running = new Set(runningNow());
   const list = $("list");
   if (!shown.length) {
+    state.order = [];
     list.replaceChildren(el("li", { class: "empty", text: state.overview.targets.length ? "当てはまる見張りがありません" : "まだ見張りがありません" }));
   } else {
     const ordered = [...shown.filter((t) => t.enabled), ...shown.filter((t) => !t.enabled)];
@@ -1006,7 +1009,7 @@ async function saveRule(path, body, done) {
 }
 
 function renderRules(d) {
-  const out = [el("h3", { text: "ルールと期限" }),
+  const out = [
     el("p", { class: "sub", style: "margin-top:0", text: "決めておくと、チェックのたびに watchpoint が確かめて、合わなければ「要注意」として出します（AI は使いません）。" })];
 
   // the deadline: pick a usual one or write one
@@ -1181,6 +1184,10 @@ function groupEdit(d) {
 }
 
 function renderDetail(d) {
+  const expanded = state.detail && state.detail.name === d.name
+    ? new Set([...$("detail").querySelectorAll("details.detail-section[open]")].map((node) => node.id)) : new Set();
+  const section = (id, title, ...content) => el("details", { id, class: "detail-section", open: expanded.has(id) },
+    el("summary", { text: title }), ...content);
   state.detail = d;
   const note = el("input", { type: "text", id: "ack-note", placeholder: "メモ（任意。ログに残る）", "aria-label": "確認のメモ" });
   note.addEventListener("keydown", (e) => { if (e.key === "Enter") runAck([d.name], note.value); });
@@ -1189,7 +1196,8 @@ function renderDetail(d) {
   // The name, the state and what to do with it stay at the top while a long change is read below.
   const head = el("div", { class: "detail-head" },
     el("div", { class: "title-row" },
-      el("h2", { text: d.name }), el("span", { class: `badge ${badgeClass(d.status)}`, text: d.status })),
+      el("h2", { text: d.name }), el("span", { class: `badge ${badgeClass(d.status)}`, text: d.status }),
+      el("span", { class: "last-check", text: `最終チェック ${short(d.last_checked)}` })),
     el("div", { id: "check-state", class: "check-state", role: "status", hidden: true }),
     el("div", { class: "actions" },
       el("button", { "data-check": "1", onclick: () => runCheck([d.name]), text: "今すぐチェック" }),
@@ -1197,14 +1205,15 @@ function renderDetail(d) {
       d.pending ? el("button", { class: "primary", text: "確認済みにする", onclick: () => runAck([d.name], note.value) }) : null));
   const parts = [
     head,
-    el("div", { class: "meta" },
+    // which file or page this is stays in sight; how often, which group and tags fold away
+    el("div", { class: "meta source-line" }, el("div", {}, d.command ? "コマンド: " : "元の場所: ", el("code", { text: d.source }), " ",
+      d.place ? el("button", { class: "mini", text: d.place.label, title: d.place.where, onclick: () => openPlace(d.name) })
+        : d.command ? null : el("span", { class: "sub", title: "SharePoint のファイルを直接開くと、元のファイルを編集できる状態で開いてしまうため", text: "（開く場所は、設定の link: で決められます）" }))),
+    section("target-info", `間隔・グループ・タグ（${d.kind}）`, el("div", { class: "meta" },
       el("div", {}, `${d.kind}　最終チェック ${short(d.last_checked)}`, d.tags.length ? `　タグ: ${d.tags.join(", ")}` : ""),
-      el("div", {}, d.command ? "コマンド: " : "元の場所: ", el("code", { text: d.source }), " ",
-        d.place ? el("button", { class: "mini", text: d.place.label, title: d.place.where, onclick: () => openPlace(d.name) })
-          : d.command ? null : el("span", { class: "sub", title: "SharePoint のファイルを直接開くと、元のファイルを編集できる状態で開いてしまうため", text: "（開く場所は、設定の link: で決められます）" })),
       d.enabled ? everyRow(d) : null,
       groupEdit(d),
-      meta),
+      meta)),
     d.command && !d.command_allowed ? allowBox(d) : d.error ? el("div", { class: "error", text: d.error }) : null,
     d.alerts && d.alerts.length ? el("div", { class: "alerts" },
       el("b", { text: `要注意 ${d.alerts.length} 件（決めたルールに合わない）` }),
@@ -1228,11 +1237,11 @@ function renderDetail(d) {
     parts.push(el("h3", { text: "変更" }), el("p", { class: "sub", text: why }));
   }
   if (d.points || d.notify_when) {
-    parts.push(el("h3", { text: "AI への指示" }), el("div", { class: "card" },
+    parts.push(section("reading-points", "AI への指示", el("div", { class: "card" },
       d.points ? el("div", { class: "points" }, el("b", { text: "読むポイント" }), d.points) : null,
-      d.notify_when ? el("div", { class: "points" }, el("b", { text: "知らせる条件" }), d.notify_when) : null));
+      d.notify_when ? el("div", { class: "points" }, el("b", { text: "知らせる条件" }), d.notify_when) : null)));
   }
-  if (d.enabled) parts.push(...renderRules(d));
+  if (d.enabled) parts.push(section("target-rules", "ルールと期限", ...renderRules(d)));
   parts.push(el("h3", { text: "履歴" }));
   if (d.history.length) {
     parts.push(el("div", { class: "table-wrap" }, el("table", {},
@@ -1260,13 +1269,13 @@ function renderDetail(d) {
   } else {
     parts.push(el("p", { class: "sub", text: "まだ履歴がありません。" }));
   }
-  parts.push(el("h3", { text: "その他" }), el("div", { class: "actions" },
+  parts.push(section("target-tools", "ファイル・設定の操作", el("div", { class: "actions" },
     el("button", { text: "いまの内容をテキストで見る", onclick: () => showPreview(d.name) }),
     d.has_copy ? el("button", { text: "保存したコピーを開く", title: "最後に取ってきたコピーを、読み取り専用で開きます。元のファイルは開きません", onclick: () => openCopy(d.name, false) }) : null,
     d.has_copy ? el("button", { text: "コピーのテキストを開く", onclick: () => openCopy(d.name, true) }) : null,
     el("button", { text: "設定ファイルで編集", onclick: () => openInConfig(d.name) }),
     el("span", { class: "spacer" }),
-    el("button", { class: "danger", text: "この見張りを削除…", onclick: () => confirmRemove(d) })));
+    el("button", { class: "danger", text: "この見張りを削除…", onclick: () => confirmRemove(d) }))));
   $("detail").replaceChildren(...parts.filter(Boolean));
   renderProgress();
 }
@@ -2505,6 +2514,7 @@ async function renderLog() {
 
 async function showTab(which) {
   state.tab = which;
+  $("watch-toolbar").hidden = which !== "targets";
   for (const b of document.querySelectorAll("nav.tabs button")) {
     b.setAttribute("aria-selected", String(b.dataset.tab === which));
     b.tabIndex = b.dataset.tab === which ? 0 : -1;
@@ -2524,12 +2534,20 @@ function focusSelected() {
 }
 
 function onKey(e) {
+  if (e.key === "Escape" && $("check-options").open && !$("dialog").open) {
+    $("check-options").open = false;
+    $("check-options").querySelector("summary").focus();
+    e.preventDefault();
+    return;
+  }
   if (e.ctrlKey && e.key === "s" && state.tab === "config" && !$("dialog").open) { e.preventDefault(); saveConfig(); return; }
-  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
   if (typing || e.ctrlKey || e.metaKey || e.altKey || $("dialog").open || state.tab !== "targets") return;
   const names = state.overview ? state.order : [];  // as the list shows them: grouped, closed groups left out
   const i = names.indexOf(state.selected);
   const inList = $("list").contains(document.activeElement);
+  // Arrow keys on a button, tab or disclosure belong to that control, not the target list.
+  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !inList) return;
   const move = (name) => { select(name); if (inList) focusSelected(); };
   if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); if (names.length) move(names[Math.min(names.length - 1, i + 1)]); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); if (names.length) move(names[Math.max(0, i - 1)]); }
@@ -2560,12 +2578,26 @@ $("check-due").addEventListener("click", () => runCheck(checkScope(), true));
 $("copy-ai").addEventListener("click", () =>
   copyForAI(state.picked.size ? [...state.picked] : filtering() ? shownTargets().map((t) => t.name) : null));
 $("search").addEventListener("input", renderList);
+$("clear-filters").addEventListener("click", () => {
+  $("search").value = "";
+  $("pending-only").checked = false;
+  state.tags.clear();
+  renderTags();
+  renderList();
+  $("search").focus();
+});
 $("search").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.target.value = ""; renderList(); e.target.blur(); } });
 $("pending-only").addEventListener("change", renderList);
 $("dialog-close").addEventListener("click", () => closeDialog());
 $("dialog").addEventListener("cancel", (e) => { e.preventDefault(); closeDialog(); });  // Esc asks too
 document.addEventListener("keydown", onKey);
+document.addEventListener("click", (e) => {
+  if (!$("check-options").contains(e.target)) $("check-options").open = false;
+});
 setupAuto();
+const renderAutoStatus = () => { $("auto-status").textContent = $("auto").checked ? "（自動 ON）" : "（自動 OFF）"; };
+$("auto").addEventListener("change", renderAutoStatus);
+renderAutoStatus();
 setupConfig();
 
 (async () => {
